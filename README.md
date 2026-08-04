@@ -18,7 +18,7 @@ and leaves the model only the judgment: which branch, what to commit.
 ```bash
 git clone https://github.com/avrebarra/git-workpool
 cd git-workpool
-go build -o /usr/local/bin/git-workpool .   # any dir on your PATH
+go build -o /usr/local/bin/git-workpool ./cmd/git-workpool   # any dir on your PATH
 ```
 
 Any executable named `git-workpool` on PATH becomes the `git workpool` command.
