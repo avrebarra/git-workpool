@@ -1,22 +1,21 @@
 # git-workpool
 
-Maintain a pool of independent work clones for your repository — work on
-multiple branches in parallel, or hand tasks to an AI agent, without
-switching, stashing, or touching your main checkout.
+git-workpool is a git extension — a `git workpool` command that maintains a
+pool of working clones of your repository. Each clone is a full checkout with
+its own files and history.
 
-## Why use it
-
-**For humans:** keep a bugfix open in your main clone while prototyping a
-feature in a workpool clone. No `git stash`, no `git checkout`, no mental
-overhead. Each clone is a full independent checkout — own files, own history,
-own `node_modules`.
-
-**For AI agents:** hand a branch name to an agent, let it work in a fresh clone,
-pull the result back when done. Progress survives across sessions — the branch
-in the hub is the memory. The agent just needs a branch name, not conversation
-history.
+It's for running work in isolation so that you can work in parallel, or hand tasks to an agent,
+without ever touching your main checkout — no branch switching, no stashing.
 
 ## How it works
+
+Clones exchange work through a **hub**: a bare repository on your disk that
+stores branches. You claim a free clone, do the work, publish the branch to
+the hub, then pull it back into your main clone. Branches in the hub are the
+memory — resuming a task only needs the branch name.
+
+The pool is local and self-contained: only your main clone knows the remote
+URL, and the CLI never commits — every commit is a plain `git commit`.
 
 ```
  ┌──────────┐  publish   ┌───────────┐   pull    ┌──────────────┐
@@ -63,14 +62,14 @@ git workpool close                  # reset clone, mark it free
 
 ## Commands
 
-| Command | Where | What it does |
-|---|---|---|
-| `setup` | main clone | add a clone to the pool (initializes hub on first run) |
-| `status` | anywhere | pool state — clones, branches, free/busy |
-| `claim [--force NAME] BRANCH` | anywhere | sync a free clone to a branch, print its path |
-| `publish [BRANCH]` | either | push current branch to hub — never commits |
-| `pull [BRANCH]` | main clone | fetch + merge branch from hub |
-| `close` | workpool clone | reset clone to clean, mark it free |
+| Command                       | Where          | What it does                                           |
+| ----------------------------- | -------------- | ------------------------------------------------------ |
+| `setup`                       | main clone     | add a clone to the pool (initializes hub on first run) |
+| `status`                      | anywhere       | pool state — clones, branches, free/busy               |
+| `claim [--force NAME] BRANCH` | anywhere       | sync a free clone to a branch, print its path          |
+| `publish [BRANCH]`            | either         | push current branch to hub — never commits             |
+| `pull [BRANCH]`               | main clone     | fetch + merge branch from hub                          |
+| `close`                       | workpool clone | reset clone to clean, mark it free                     |
 
 Full reference: [docs/commands.md](docs/commands.md).
 
@@ -100,23 +99,62 @@ Alternatives:
 Any executable named `git-workpool` on `PATH` becomes the `git workpool`
 command.
 
-## Workpool vs `git worktree`
+## FAQs
 
-`git worktree` also gives you multiple working directories. The difference is
-what they share:
+### Workpool vs `git worktree`
 
-|  | `git worktree` | workpool clones |
-|---|---|---|
-| Structure | one repo, linked worktrees | independent full clones |
-| Objects and refs | shared | separate per clone |
-| Stash | shared across worktrees | separate per clone |
-| Same branch twice | impossible — one branch per worktree | allowed — clones are independent |
-| Changes visible elsewhere | immediately, via shared refs | only after you `publish` to the hub |
-| Remote access | every worktree shares remotes | only main clone knows the remote URL |
+`git worktree` gives you multiple views into one shared repo. Workpool treats
+each task like a separate developer with their own workspace, files, and
+dependencies.
 
-Use `git worktree` when you want cheap, zero-copy views over a single repo
-state. Use workpool when you want real isolation — tasks that must not see
-each other's uncommitted work, or agent work that should live only in the hub.
+This isn't about storage efficiency — it's about **task isolation**:
+
+|                           | `git worktree`                       | workpool                             |
+| ------------------------- | ------------------------------------ | ------------------------------------ |
+| Mental model              | one repo, many views                 | one developer per task               |
+| Objects and refs          | shared                               | independent per task                 |
+| Stash                     | shared across worktrees              | independent per task                 |
+| Same branch twice         | impossible — one branch per worktree | allowed — tasks are independent      |
+| Changes visible elsewhere | immediately, via shared refs         | only after you `publish` to the hub  |
+| Remote access             | every worktree shares remotes        | only main clone knows the remote URL |
+
+Use `git worktree` when you want cheap, zero-copy views over a single repo.
+Use workpool when you want real isolation — tasks that must not interfere, or
+agent work that should survive only in the hub.
+
+### AI agent workflow
+
+Where git-workpool really shines:
+
+```bash
+# agent claims a task
+git workpool claim feature/login
+# → "claimed clone sleepy-fox (branch feature/login)"
+
+# agent works...
+git commit -am "implement login flow"
+git workpool publish
+
+# you pull the result and review
+git workpool pull feature/login
+
+# agent picks up after your edits — fresh session is fine
+git workpool claim feature/login
+# → synced to your review changes, ready to continue
+```
+
+The branch in the hub is the memory. No conversation history needed — just the
+branch name.
+
+### Disk space tradeoffs
+
+Each clone is a full checkout of the working tree. Git objects are hardlinked
+from the hub (git's default for local clones), so the `.git` directory is
+shared. What's duplicated is the checked-out files and dependencies.
+
+For a typical project (100MB–1GB working tree), a few clones is negligible.
+For very large repos (game engines, monorepos), `git worktree` will always win
+on storage. Workpool is for isolation, not density.
 
 ## Documentation
 
