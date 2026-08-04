@@ -10,9 +10,9 @@ Create the hub (first run) and one codenamed clone per call.
 - Runs in the **main clone** (errors if run inside a workpool clone).
 - First call creates the bare hub at `<pool>/<project>/hub.git`, adds a `hub`
   remote to your main clone, then creates the first clone.
-- Every subsequent call creates one more codenamed clone (e.g.
-  `flirty-beaver`, `jolly-otter`; falls back to `clone-N` when codenames are
-  exhausted).
+- Every subsequent call creates one more codenamed clone — a random
+  adjective-animal pair (e.g. `jolly-otter`, `brisk-fox`); falls back to
+  `clone-N` if random names keep colliding.
 - After cloning, runs the project's package manager install if a lockfile is
   present (`bun.lock` → bun, `pnpm-lock.yaml` → pnpm,
   `package-lock.json` → npm, `yarn.lock` → yarn).

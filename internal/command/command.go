@@ -6,11 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/avrebarra/git-workpool/internal/clone"
 	"github.com/avrebarra/git-workpool/internal/gitx"
 	"github.com/avrebarra/git-workpool/internal/pool"
+	"github.com/avrebarra/git-workpool/internal/util"
 )
 
 // Setup creates the hub (first run) and one codenamed clone per call.
@@ -18,33 +18,37 @@ func Setup(poolRoot string, info pool.Info) error {
 	if info.IsClone {
 		return fmt.Errorf("setup runs in the main clone, not inside a workpool clone")
 	}
-	pdir := pool.ProjectDir(poolRoot, info.Project)
+
+	// create the bare hub once per project
 	hub := pool.HubDir(poolRoot, info.Project)
-	if _, err := os.Stat(hub); os.IsNotExist(err) {
-		if err := os.MkdirAll(pdir, 0o755); err != nil {
+	if !util.FileExists(pool.ProjectDir(poolRoot, info.Project), "hub.git") {
+		if err := os.MkdirAll(pool.ProjectDir(poolRoot, info.Project), 0o755); err != nil {
 			return err
 		}
-		if out, err := gitx.Run("", "clone", "--bare", info.Root, hub); err != nil {
-			return fmt.Errorf("create hub: %v\n%s", err, out)
+		if err := gitx.CloneBare(info.Root, hub); err != nil {
+			return fmt.Errorf("create hub: %v", err)
 		}
 		fmt.Printf("hub created: %s\n", hub)
 	} else {
 		fmt.Printf("hub exists: %s\n", hub)
 	}
+
 	// wire the main clone to the hub
-	if _, err := gitx.Run(info.Root, "remote", "get-url", "hub"); err != nil {
-		if out, err := gitx.Run(info.Root, "remote", "add", "hub", hub); err != nil {
-			return fmt.Errorf("add hub remote: %v\n%s", err, out)
+	if !gitx.HasRemote(info.Root, "hub") {
+		if err := gitx.AddRemote(info.Root, "hub", hub); err != nil {
+			return fmt.Errorf("add hub remote: %v", err)
 		}
 		fmt.Printf("hub remote added\n")
 	}
+
+	// create one codenamed clone per call
 	name := clone.NextCodename(poolRoot, info.Project)
-	clonePath := filepath.Join(pdir, name)
-	if _, err := os.Stat(clonePath); err == nil {
+	clonePath := filepath.Join(pool.ProjectDir(poolRoot, info.Project), name)
+	if util.FileExists(pool.ProjectDir(poolRoot, info.Project), name) {
 		return fmt.Errorf("clone %q already exists at %s", name, clonePath)
 	}
-	if out, err := gitx.Run("", "clone", hub, clonePath); err != nil {
-		return fmt.Errorf("create clone: %v\n%s", err, out)
+	if err := gitx.Clone(hub, clonePath); err != nil {
+		return fmt.Errorf("create clone: %v", err)
 	}
 	installDeps(clonePath)
 	fmt.Printf("clone created: %s (%s)\n", name, clonePath)
@@ -53,17 +57,21 @@ func Setup(poolRoot string, info pool.Info) error {
 
 // Status prints hub branches and per-clone state.
 func Status(poolRoot, project string) error {
-	if _, err := os.Stat(pool.ProjectDir(poolRoot, project)); os.IsNotExist(err) {
+	if !util.FileExists(poolRoot, project) {
 		return fmt.Errorf("no pool for %q yet — run `git workpool setup`", project)
 	}
 	fmt.Printf("pool: %s\n", pool.ProjectDir(poolRoot, project))
-	if _, err := os.Stat(pool.HubDir(poolRoot, project)); err == nil {
-		if out, err := gitx.Run(pool.HubDir(poolRoot, project), "for-each-ref", "--format=%(refname:short)", "refs/heads"); err == nil && out != "" {
-			fmt.Printf("hub branches: %s\n", strings.Join(strings.Split(out, "\n"), ", "))
+
+	// hub branches
+	if util.FileExists(pool.ProjectDir(poolRoot, project), "hub.git") {
+		if branches, err := gitx.ListBranches(pool.HubDir(poolRoot, project)); err == nil && len(branches) > 0 {
+			fmt.Printf("hub branches: %s\n", joinNames(branches))
 		}
 	} else {
 		fmt.Println("hub: missing — run `git workpool setup`")
 	}
+
+	// per-clone state
 	for _, s := range clone.States(poolRoot, project) {
 		mark := "free"
 		if s.Busy() {
@@ -94,11 +102,14 @@ func Claim(poolRoot, project, force, branch string) error {
 	if err != nil {
 		return err
 	}
+
+	// force-claims rescue the clone's work before touching it
 	if force != "" {
 		if err := clone.Rescue(target); err != nil {
 			return err
 		}
 	}
+
 	// resolve branch: explicit, or re-engage the clone's existing branch
 	if branch == "" {
 		if target.Branch != target.Default && target.HasHub {
@@ -107,21 +118,18 @@ func Claim(poolRoot, project, force, branch string) error {
 			return fmt.Errorf("no branch given and clone is on %q — pass a branch", target.Branch)
 		}
 	}
-	// sync: reset to hub's copy of the branch, or create from hub default
-	if out, err := gitx.Run(target.Path, "fetch", "origin"); err != nil {
-		return fmt.Errorf("fetch hub failed: %v\n%s", err, out)
+
+	// sync the clone: reset to the hub's copy, or branch off the default
+	if err := gitx.Fetch(target.Path, "origin"); err != nil {
+		return fmt.Errorf("fetch hub failed: %v", err)
 	}
-	if _, err := gitx.Run(target.Path, "rev-parse", "--verify", "--quiet", "origin/"+branch); err == nil {
-		if out, err := gitx.Run(target.Path, "checkout", "-B", branch, "origin/"+branch); err != nil {
-			return fmt.Errorf("checkout failed: %v\n%s", err, out)
+	if gitx.HasRemoteBranch(target.Path, branch) {
+		if err := gitx.CheckoutBranch(target.Path, branch); err != nil {
+			return fmt.Errorf("checkout failed: %v", err)
 		}
 	} else {
-		db := clone.DefaultBranch(target.Path)
-		if _, err := gitx.Run(target.Path, "rev-parse", "--verify", "--quiet", "origin/"+db); err != nil {
-			return fmt.Errorf("hub has no %q branch — publish it from your main clone first: `git workpool publish %s`", db, db)
-		}
-		if out, err := gitx.Run(target.Path, "checkout", "-b", branch, "origin/"+db); err != nil {
-			return fmt.Errorf("checkout failed: %v\n%s", err, out)
+		if err := gitx.CheckoutNewBranch(target.Path, branch, gitx.GetDefaultBranch(target.Path)); err != nil {
+			return fmt.Errorf("checkout failed: %v", err)
 		}
 	}
 	fmt.Printf("claimed clone %s at %s (branch %s)\n", target.Name, target.Path, branch)
@@ -132,25 +140,35 @@ func Claim(poolRoot, project, force, branch string) error {
 // In the main clone the branch exists only as a hub ref, so push HEAD:<branch>.
 func Publish(info pool.Info, branch string) error {
 	if branch == "" {
-		branch, _ = gitx.Run(info.Root, "rev-parse", "--abbrev-ref", "HEAD")
+		branch, _ = gitx.GetCurrentBranch(info.Root)
 	}
 	if info.IsClone {
-		if _, err := gitx.Run(info.Root, "remote", "get-url", "origin"); err != nil {
-			return fmt.Errorf("no origin remote — run `git workpool setup` first")
-		}
-		out, err := gitx.Run(info.Root, "push", "origin", branch)
-		if out != "" {
-			fmt.Println(out)
-		}
-		if err != nil {
-			return fmt.Errorf("publish failed: %v", err)
-		}
-		return nil
+		return publishFromClone(info, branch)
 	}
-	if _, err := gitx.Run(info.Root, "remote", "get-url", "hub"); err != nil {
+	return publishFromMain(info, branch)
+}
+
+// publishFromClone pushes the clone's branch to its origin (the hub).
+func publishFromClone(info pool.Info, branch string) error {
+	if !gitx.HasRemote(info.Root, "origin") {
+		return fmt.Errorf("no origin remote — run `git workpool setup` first")
+	}
+	out, err := gitx.PushBranch(info.Root, "origin", branch)
+	if out != "" {
+		fmt.Println(out)
+	}
+	if err != nil {
+		return fmt.Errorf("publish failed: %v", err)
+	}
+	return nil
+}
+
+// publishFromMain pushes HEAD to the hub remote under the branch name.
+func publishFromMain(info pool.Info, branch string) error {
+	if !gitx.HasRemote(info.Root, "hub") {
 		return fmt.Errorf("no hub remote — run `git workpool setup` first")
 	}
-	out, err := gitx.Run(info.Root, "push", "hub", "HEAD:"+branch)
+	out, err := gitx.PushHeadBranch(info.Root, "hub", branch)
 	if out != "" {
 		fmt.Println(out)
 	}
@@ -165,16 +183,16 @@ func Pull(info pool.Info, branch string) error {
 	if info.IsClone {
 		return fmt.Errorf("pull runs in the main clone, not inside a workpool clone")
 	}
-	if _, err := gitx.Run(info.Root, "remote", "get-url", "hub"); err != nil {
+	if !gitx.HasRemote(info.Root, "hub") {
 		return fmt.Errorf("no hub remote — run `git workpool setup` first")
 	}
 	if branch == "" {
-		branch, _ = gitx.Run(info.Root, "rev-parse", "--abbrev-ref", "HEAD")
+		branch, _ = gitx.GetCurrentBranch(info.Root)
 	}
-	if out, err := gitx.Run(info.Root, "fetch", "hub"); err != nil {
-		return fmt.Errorf("fetch hub failed: %v\n%s", err, out)
+	if err := gitx.Fetch(info.Root, "hub"); err != nil {
+		return fmt.Errorf("fetch hub failed: %v", err)
 	}
-	out, err := gitx.Run(info.Root, "merge", "hub/"+branch)
+	out, err := gitx.MergeRemoteBranch(info.Root, "hub", branch)
 	if out != "" {
 		fmt.Println(out)
 	}
@@ -189,17 +207,18 @@ func Close(poolRoot string, info pool.Info) error {
 	if !info.IsClone {
 		return fmt.Errorf("close runs inside a workpool clone")
 	}
-	states := clone.States(poolRoot, info.Project)
 	var s *clone.State
-	for i := range states {
-		if states[i].Name == info.Clone {
-			s = &states[i]
+	for _, st := range clone.States(poolRoot, info.Project) {
+		if st.Name == info.Clone {
+			s = &st
 			break
 		}
 	}
 	if s == nil {
 		return fmt.Errorf("%s is not a workpool clone", info.Clone)
 	}
+
+	// report exactly what will be discarded before resetting
 	fmt.Printf("closing %s (on %s):", s.Name, s.Branch)
 	switch {
 	case s.Dirty > 0 && s.Ahead > 0:
@@ -212,55 +231,33 @@ func Close(poolRoot string, info pool.Info) error {
 		fmt.Print(" clean, nothing to discard")
 	}
 	fmt.Println()
-	db := clone.DefaultBranch(s.Path)
-	if out, err := gitx.Run(s.Path, "fetch", "origin"); err != nil {
-		return fmt.Errorf("fetch failed: %v\n%s", err, out)
+
+	// reset to the hub default branch and drop untracked files
+	db := gitx.GetDefaultBranch(s.Path)
+	if err := gitx.Fetch(s.Path, "origin"); err != nil {
+		return fmt.Errorf("fetch failed: %v", err)
 	}
-	if out, err := gitx.Run(s.Path, "checkout", "-B", db, "origin/"+db); err != nil {
-		return fmt.Errorf("reset failed: %v\n%s", err, out)
+	if err := gitx.CheckoutBranch(s.Path, db); err != nil {
+		return fmt.Errorf("reset failed: %v", err)
 	}
-	if out, err := gitx.Run(s.Path, "clean", "-fd"); err != nil {
-		return fmt.Errorf("clean failed: %v\n%s", err, out)
+	if err := gitx.Clean(s.Path); err != nil {
+		return fmt.Errorf("clean failed: %v", err)
 	}
 	fmt.Printf("clone %s free\n", s.Name)
 	return nil
-}
-
-// ParseClaimArgs splits claim flags: --force NAME, plus one branch argument.
-func ParseClaimArgs(args []string) (force, branch string, err error) {
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--force" {
-			if i+1 >= len(args) {
-				return "", "", fmt.Errorf("--force requires a clone name (never auto-picked)")
-			}
-			i++
-			force = args[i]
-		} else {
-			branch = args[i]
-		}
-	}
-	return force, branch, nil
-}
-
-// BranchArg returns the first non-flag argument, if any.
-func BranchArg(args []string) string {
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		return args[0]
-	}
-	return ""
 }
 
 // installDeps runs the project's package manager install in the clone.
 func installDeps(path string) {
 	pm := ""
 	switch {
-	case fileExists(path, "bun.lock"), fileExists(path, "bun.lockb"):
+	case util.FileExists(path, "bun.lock"), util.FileExists(path, "bun.lockb"):
 		pm = "bun"
-	case fileExists(path, "pnpm-lock.yaml"):
+	case util.FileExists(path, "pnpm-lock.yaml"):
 		pm = "pnpm"
-	case fileExists(path, "package-lock.json"):
+	case util.FileExists(path, "package-lock.json"):
 		pm = "npm"
-	case fileExists(path, "yarn.lock"):
+	case util.FileExists(path, "yarn.lock"):
 		pm = "yarn"
 	}
 	if pm == "" {
@@ -281,7 +278,14 @@ func installDeps(path string) {
 	fmt.Printf("deps: %s install done\n", pm)
 }
 
-func fileExists(dir, name string) bool {
-	_, err := os.Stat(filepath.Join(dir, name))
-	return err == nil
+// joinNames renders a branch list as a comma-separated line.
+func joinNames(names []string) string {
+	out := ""
+	for i, n := range names {
+		if i > 0 {
+			out += ", "
+		}
+		out += n
+	}
+	return out
 }

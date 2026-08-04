@@ -3,6 +3,7 @@ package clone
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/avrebarra/git-workpool/internal/gitx"
@@ -63,24 +64,43 @@ func TestNextCodename(t *testing.T) {
 	if err := os.MkdirAll(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := NextCodename(pdir, "proj"); got != "flirty-beaver" {
-		t.Errorf("NextCodename empty = %q, want flirty-beaver", got)
+	// returns a word-word codename
+	first := NextCodename(pdir, "proj")
+	if !wordWord(first) {
+		t.Errorf("NextCodename = %q, want word-word format", first)
 	}
-	if err := os.MkdirAll(filepath.Join(project, "flirty-beaver"), 0o755); err != nil {
+	// never reuses a taken name
+	if err := os.MkdirAll(filepath.Join(project, first), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := NextCodename(pdir, "proj"); got != "jolly-otter" {
-		t.Errorf("NextCodename used = %q, want jolly-otter", got)
+	second := NextCodename(pdir, "proj")
+	if second == first {
+		t.Errorf("NextCodename reused %q", second)
 	}
-	// exhaustion → clone-N
-	for _, c := range codenames {
-		if err := os.MkdirAll(filepath.Join(project, c), 0o755); err != nil {
+	if !wordWord(second) {
+		t.Errorf("NextCodename = %q, want word-word format", second)
+	}
+	// a handful of setup calls yields all-distinct codenames
+	seen := map[string]bool{first: true, second: true}
+	for i := 0; i < 10; i++ {
+		name := NextCodename(pdir, "proj")
+		if seen[name] {
+			t.Errorf("NextCodename repeated %q", name)
+		}
+		seen[name] = true
+		if err := os.MkdirAll(filepath.Join(project, name), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := NextCodename(pdir, "proj"); got != "clone-31" {
-		t.Errorf("NextCodename exhausted = %q, want clone-31", got)
+}
+
+// wordWord reports whether s looks like "adjective-animal" (hyphen-joined,
+// no spaces). Adjectives may be multi-word ("sri lankan" → sri-lankan).
+func wordWord(s string) bool {
+	if s == "" || strings.ContainsAny(s, " \t") {
+		return false
 	}
+	return strings.Count(s, "-") >= 1
 }
 
 func TestDefaultBranch(t *testing.T) {
@@ -110,7 +130,7 @@ func TestDefaultBranch(t *testing.T) {
 	if _, err := gitx.Run("", "clone", hub, clonePath); err != nil {
 		t.Fatal(err)
 	}
-	if got := DefaultBranch(clonePath); got != "trunk" {
+	if got := gitx.GetDefaultBranch(clonePath); got != "trunk" {
 		t.Errorf("DefaultBranch = %q, want trunk", got)
 	}
 }

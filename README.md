@@ -1,17 +1,11 @@
 # git-workpool
 
-Deterministic workpool clones for isolated agent work.
+A pool of independent git clones for running isolated work, bridged by a local
+**hub** — a storage-only repo that acts as a mailbox.
 
-`git workpool` gives you — or an AI agent — a pool of independent clones to
-work in, bridged by a local **hub**: a storage-only repo on your disk that acts
-as a mailbox. Workpool clones push work into the hub; your main clone pulls it
-out. **The pool never touches your remote.** Only your main clone knows the
-remote URL, and nothing leaves the pool unless you push it yourself.
-
-Why: agent skills that tell the model *how* to run git (fetch, checkout, reset,
-push) fail silently — the model forgets a step, works in the wrong folder, or
-claims a busy clone. `git workpool` moves the mechanics into deterministic
-commands and leaves the model only the judgment: which branch, what to commit.
+The pool lives on your disk. Workpool clones push work into the hub; your main
+clone pulls it out. The pool never touches your remote: only your main clone
+knows the remote URL, and nothing leaves the pool unless you push it yourself.
 
 ## Install
 
@@ -46,7 +40,7 @@ git workpool setup               # create hub + one codenamed clone per call
 git workpool status              # see clones and their state
 ```
 
-Then run a task in a clone:
+Run a task in a clone:
 
 ```bash
 git workpool claim workpool/fix-x   # syncs a free clone, prints its folder
@@ -57,9 +51,6 @@ git workpool publish                # push the branch to the hub
 # back in your main clone:
 git workpool pull workpool/fix-x    # review the work
 ```
-
-See [docs/](docs/) for the full model, command reference, and how to wire this
-into AI agents.
 
 ## Commands
 
@@ -76,4 +67,5 @@ into AI agents.
 
 - [Model](docs/README.md) — hub, clones, pool layout, free/busy rules
 - [Commands](docs/commands.md) — full reference with semantics
-- [Agent workflow](docs/workflow.md) — the loop, branch naming, and agent rules
+- [AI agents](docs/workflow.md) — the loop, branch naming, and agent rules for
+  integrating this tool into an agent setup

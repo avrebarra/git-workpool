@@ -8,8 +8,8 @@ directory on your disk.
 ```
 GIT_WORKPOOL_HOME                <- pool root (default ~/.local/share/git-workpool)
   <project>/hub.git              <- the hub (bare repo, storage only)
-  <project>/flirty-beaver/       <- codenamed clones, as many as you want
-  <project>/jolly-otter/
+  <project>/<codename>/          <- codenamed clones, as many as you want
+  <project>/<codename>/
 ```
 
 - **Pool root resolution** (first match wins):

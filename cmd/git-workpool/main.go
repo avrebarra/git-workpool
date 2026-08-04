@@ -6,87 +6,132 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+
+	"github.com/urfave/cli/v3"
 
 	"github.com/avrebarra/git-workpool/internal/command"
 	"github.com/avrebarra/git-workpool/internal/pool"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(1)
-	}
-	cmd := os.Args[1]
-	if cmd == "help" || cmd == "--help" || cmd == "-h" {
-		usage()
-		return
-	}
-	switch cmd {
-	case "setup", "status", "claim", "publish", "pull", "close":
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
-		usage()
-		os.Exit(1)
+	app := &cli.Command{
+		Name:  "git-workpool",
+		Usage: "isolated workpool clones for agent work",
+		Description: `The pool lives outside the repo. Root resolution:
+$GIT_WORKPOOL_HOME, then git config --global workpool.home, then
+$XDG_DATA_HOME/git-workpool. A clone is free when clean and fully pushed to
+the hub. The hub is the only link between your main clone and the workpool
+clones; the pool never touches your remote.`,
+		Commands: []*cli.Command{
+			setupCmd(),
+			statusCmd(),
+			claimCmd(),
+			publishCmd(),
+			pullCmd(),
+			closeCmd(),
+		},
+		// route every failure back to main() so exit codes stay uniform (1)
+		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {},
 	}
 
-	root := pool.Root()
-	var err error
-	switch cmd {
-	case "setup":
-		err = withRepo(root, func(info pool.Info) error { return command.Setup(root, info) })
-	case "status":
-		err = withRepo(root, func(info pool.Info) error { return command.Status(root, info.Project) })
-	case "claim":
-		force, branch, e := command.ParseClaimArgs(os.Args[2:])
-		if e != nil {
-			err = e
-			break
-		}
-		err = withRepo(root, func(info pool.Info) error { return command.Claim(root, info.Project, force, branch) })
-	case "publish":
-		branch := command.BranchArg(os.Args[2:])
-		err = withRepo(root, func(info pool.Info) error { return command.Publish(info, branch) })
-	case "pull":
-		branch := command.BranchArg(os.Args[2:])
-		err = withRepo(root, func(info pool.Info) error { return command.Pull(info, branch) })
-	case "close":
-		err = withRepo(root, func(info pool.Info) error { return command.Close(root, info) })
-	}
-	if err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-// withRepo resolves the current repo once and hands it to fn.
-func withRepo(root string, fn func(pool.Info) error) error {
-	info, err := pool.Current(root)
+// root resolves the pool location once per invocation.
+func root() string { return pool.Root() }
+
+// withRepo resolves the current repo and hands it to fn.
+func withRepo(fn func(pool.Info) error) error {
+	info, err := pool.Current(root())
 	if err != nil {
 		return err
 	}
 	return fn(info)
 }
 
-func usage() {
-	fmt.Print(`git workpool — isolated workpool clones for agent work.
+func setupCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "setup",
+		Usage: "create hub (first run), then one codenamed clone per call",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return withRepo(func(info pool.Info) error {
+				return command.Setup(root(), info)
+			})
+		},
+	}
+}
 
-The pool lives outside the repo. Root resolution: $GIT_WORKPOOL_HOME, then
-git config --global workpool.home, then $XDG_DATA_HOME/git-workpool.
+func statusCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "status",
+		Usage: "show hub + clones: branch, busy/free, un-pushed/dirty",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return withRepo(func(info pool.Info) error {
+				return command.Status(root(), info.Project)
+			})
+		},
+	}
+}
 
-Commands:
-  setup                    create hub (first run), then one codenamed clone per call
-  status                   show hub + clones: branch, busy/free, un-pushed/dirty
-  claim [--force NAME] [BRANCH]
-                           sync a free clone to BRANCH and print its folder.
-                           --force NAME: rescue + reset + claim that clone (permission-gated)
-  publish [BRANCH]         push current branch to the hub (main clone or workpool clone)
-  pull [BRANCH]            main clone: fetch + merge the branch from the hub
-  close                    workpool clone: discard local state, reset to main, free
+func claimCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "claim",
+		Usage:     "sync a free clone to BRANCH and print its folder",
+		ArgsUsage: "[--force NAME] [BRANCH]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "force",
+				Usage: "rescue + reset + claim that clone (permission-gated)",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return withRepo(func(info pool.Info) error {
+				return command.Claim(root(), info.Project, cmd.String("force"), cmd.Args().First())
+			})
+		},
+	}
+}
 
-A clone is free when clean and fully pushed to the hub. The hub is the only
-link between your main clone and the workpool clones; the pool never touches
-your remote.
-`)
+func publishCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "publish",
+		Usage:     "push current branch to the hub (main clone or workpool clone)",
+		ArgsUsage: "[BRANCH]",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return withRepo(func(info pool.Info) error {
+				return command.Publish(info, cmd.Args().First())
+			})
+		},
+	}
+}
+
+func pullCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "pull",
+		Usage:     "main clone: fetch + merge the branch from the hub",
+		ArgsUsage: "[BRANCH]",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return withRepo(func(info pool.Info) error {
+				return command.Pull(info, cmd.Args().First())
+			})
+		},
+	}
+}
+
+func closeCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "close",
+		Usage: "workpool clone: discard local state, reset to main, free",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return withRepo(func(info pool.Info) error {
+				return command.Close(root(), info)
+			})
+		},
+	}
 }

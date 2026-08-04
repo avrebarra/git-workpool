@@ -10,18 +10,8 @@ import (
 
 	"github.com/avrebarra/git-workpool/internal/gitx"
 	"github.com/avrebarra/git-workpool/internal/pool"
+	"github.com/brianvoe/gofakeit/v7"
 )
-
-// codenames — ordered list of adjective-animal pairs (Ubuntu-style).
-// setup takes the first unused one; falls back to clone-N when exhausted.
-var codenames = []string{
-	"flirty-beaver", "jolly-otter", "sleepy-hawk", "brisk-fox", "mellow-panda",
-	"zippy-lobster", "lucky-hedgehog", "nimble-falcon", "cosy-lynx", "plucky-badger",
-	"sassy-wombat", "wobbly-flamingo", "peppy-narwhal", "goofy-puffin", "snappy-axolotl",
-	"rosy-capybara", "chirpy-kookaburra", "feisty-manatee", "grumpy-pelican", "sunny-meerkat",
-	"dizzy-dolphin", "fuzzy-armadillo", "jumpy-kangaroo", "dozy-dragonfly", "cranky-camel",
-	"dreamy-dingo", "breezy-bison", "witty-walrus", "fancy-finch", "noble-newt",
-}
 
 // State is the observed state of one clone.
 type State struct {
@@ -36,13 +26,14 @@ type State struct {
 
 // Busy reports whether the clone holds unreleased work and must not be touched.
 func (s State) Busy() bool {
-	if s.Dirty > 0 {
+	switch {
+	case s.Dirty > 0: // uncommitted changes would be lost
 		return true
-	}
-	if s.Branch != s.Default && !s.HasHub {
+	case s.Branch != s.Default && !s.HasHub: // branch work never pushed to hub
 		return true
+	default:
+		return s.Ahead > 0 // commits the hub hasn't seen yet
 	}
-	return s.Ahead > 0
 }
 
 // States observes every clone in the pool for the project.
@@ -54,32 +45,44 @@ func States(poolRoot, project string) []State {
 	states := make([]State, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(pool.ProjectDir(poolRoot, project), name)
-		branch, _ := gitx.Run(path, "rev-parse", "--abbrev-ref", "HEAD")
-		s := State{Name: name, Path: path, Branch: branch, Default: DefaultBranch(path)}
-		if out, err := gitx.Run(path, "status", "--porcelain"); err == nil && out != "" {
-			s.Dirty = len(strings.Split(out, "\n"))
-		}
-		if out, err := gitx.Run(path, "rev-parse", "--verify", "--quiet", "origin/"+branch); err == nil && out != "" {
-			s.HasHub = true
-			if n, err := gitx.Run(path, "rev-list", "--count", "origin/"+branch+"..HEAD"); err == nil {
-				fmt.Sscan(n, &s.Ahead)
-			}
-		}
-		states = append(states, s)
+		states = append(states, observe(name, path))
 	}
 	return states
+}
+
+// observe reads one clone's git state into a State.
+func observe(name, path string) State {
+	branch, _ := gitx.GetCurrentBranch(path)
+	s := State{Name: name, Path: path, Branch: branch, Default: gitx.GetDefaultBranch(path)}
+	s.Dirty = gitx.CountDirty(path)
+	// a pushed branch is one the hub can re-sync from
+	if gitx.HasRemoteBranch(path, branch) {
+		s.HasHub = true
+		s.Ahead = gitx.CountCommitsAhead(path, branch)
+	}
+	return s
 }
 
 // PickTarget selects a clone to claim: --force NAME, else the first free one.
 func PickTarget(states []State, force string) (*State, error) {
 	if force != "" {
-		for i := range states {
-			if states[i].Name == force {
-				return &states[i], nil
-			}
-		}
-		return nil, fmt.Errorf("no clone named %q (available: %s)", force, Names(states))
+		return pickByForce(states, force)
 	}
+	return pickFirstFree(states)
+}
+
+// pickByForce returns the named clone, erroring if it doesn't exist.
+func pickByForce(states []State, force string) (*State, error) {
+	for i := range states {
+		if states[i].Name == force {
+			return &states[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no clone named %q (available: %s)", force, Names(states))
+}
+
+// pickFirstFree returns the first non-busy clone.
+func pickFirstFree(states []State) (*State, error) {
 	for i := range states {
 		if !states[i].Busy() {
 			return &states[i], nil
@@ -97,42 +100,41 @@ func Names(states []State) string {
 	return strings.Join(names, ", ")
 }
 
-// Rescue preserves un-pushed commits (push to hub) and dirty files (stash).
+// Rescue preserves un-pushed commits (push to hub) and dirty files (stash)
+// before a force-claim resets the clone.
 func Rescue(s *State) error {
 	fmt.Printf("force-claiming %s (busy on %s)\n", s.Name, s.Branch)
-	// count commits the hub doesn't have yet
-	rescued := 0
-	if out, err := gitx.Run(s.Path, "rev-list", "--count", "HEAD", "--not", "--remotes"); err == nil {
-		fmt.Sscan(out, &rescued)
-	}
-	if rescued > 0 {
-		if out, err := gitx.Run(s.Path, "push", "origin", s.Branch); err != nil {
-			return fmt.Errorf("rescue push failed — refusing to force: %v\n%s", err, out)
+
+	// push un-pushed commits to the hub so they survive the reset
+	if n := gitx.CountUnpushedCommits(s.Path); n > 0 {
+		if _, err := gitx.PushBranch(s.Path, "origin", s.Branch); err != nil {
+			return fmt.Errorf("rescue push failed — refusing to force: %v", err)
 		}
-		fmt.Printf("  rescued %d commit(s) to hub on %s\n", rescued, s.Branch)
+		fmt.Printf("  rescued %d commit(s) to hub on %s\n", n, s.Branch)
 	}
+
+	// stash dirty files so they survive the reset
 	if s.Dirty > 0 {
-		if out, err := gitx.Run(s.Path, "stash", "push", "-m", "workpool force-claim rescue"); err != nil {
-			return fmt.Errorf("rescue stash failed — refusing to force: %v\n%s", err, out)
+		if err := gitx.Stash(s.Path, "workpool force-claim rescue"); err != nil {
+			return fmt.Errorf("rescue stash failed — refusing to force: %v", err)
 		}
 		fmt.Printf("  stashed %d change(s) as stash@{0} in %s\n", s.Dirty, s.Name)
 	}
 	return nil
 }
 
-// NextCodename returns the first unused codename, then clone-N when exhausted.
+// NextCodename returns an unused random codename, falling back to clone-N
+// when the random pool is exhausted.
 func NextCodename(poolRoot, project string) string {
-	used := map[string]bool{}
-	if names, err := listClones(poolRoot, project); err == nil {
-		for _, n := range names {
-			used[n] = true
+	used := usedCodenames(poolRoot, project)
+	// a few random attempts; collisions across ~900 combos are unlikely
+	for i := 0; i < 30; i++ {
+		name := randomCodename()
+		if !used[name] {
+			return name
 		}
 	}
-	for _, c := range codenames {
-		if !used[c] {
-			return c
-		}
-	}
+	// give up on randomness — fall back to numbered clones
 	for n := len(used) + 1; ; n++ {
 		name := fmt.Sprintf("clone-%d", n)
 		if !used[name] {
@@ -141,14 +143,30 @@ func NextCodename(poolRoot, project string) string {
 	}
 }
 
-// DefaultBranch returns the clone's default branch name (from origin/HEAD).
-func DefaultBranch(path string) string {
-	if out, err := gitx.Run(path, "rev-parse", "--abbrev-ref", "origin/HEAD"); err == nil && out != "" {
-		return strings.TrimPrefix(out, "origin/")
-	}
-	return "main"
+// randomCodename builds an adjective-animal name, e.g. "flirty-beaver".
+// gofakeit can emit multi-word tokens ("guinea pig"), so words are joined
+// with hyphens to keep the name a single path-safe token.
+func randomCodename() string {
+	return slug(gofakeit.Adjective()) + "-" + slug(gofakeit.Animal())
 }
 
+// slug lowercases and joins whitespace-separated words with hyphens.
+func slug(s string) string {
+	return strings.Join(strings.Fields(strings.ToLower(s)), "-")
+}
+
+// usedCodenames returns the set of clone names already taken in the pool.
+func usedCodenames(poolRoot, project string) map[string]bool {
+	used := map[string]bool{}
+	if names, err := listClones(poolRoot, project); err == nil {
+		for _, n := range names {
+			used[n] = true
+		}
+	}
+	return used
+}
+
+// listClones returns clone folder names (excluding the hub), sorted.
 func listClones(poolRoot, project string) ([]string, error) {
 	entries, err := os.ReadDir(pool.ProjectDir(poolRoot, project))
 	if err != nil {

@@ -11,46 +11,6 @@ import (
 	"github.com/avrebarra/git-workpool/internal/pool"
 )
 
-func TestParseClaimArgs(t *testing.T) {
-	cases := []struct {
-		name          string
-		args          []string
-		force, branch string
-		wantErr       bool
-	}{
-		{"branch only", []string{"workpool/foo"}, "", "workpool/foo", false},
-		{"force then branch", []string{"--force", "flirty-beaver", "workpool/foo"}, "flirty-beaver", "workpool/foo", false},
-		{"branch then force", []string{"workpool/foo", "--force", "flirty-beaver"}, "flirty-beaver", "workpool/foo", false},
-		{"force without name", []string{"--force"}, "", "", true},
-		{"empty", nil, "", "", false},
-	}
-	for _, tc := range cases {
-		force, branch, err := ParseClaimArgs(tc.args)
-		if (err != nil) != tc.wantErr {
-			t.Errorf("%s: err = %v, wantErr %v", tc.name, err, tc.wantErr)
-		}
-		if force != tc.force || branch != tc.branch {
-			t.Errorf("%s: got force=%q branch=%q, want force=%q branch=%q", tc.name, force, branch, tc.force, tc.branch)
-		}
-	}
-}
-
-func TestBranchArg(t *testing.T) {
-	cases := []struct {
-		args []string
-		want string
-	}{
-		{[]string{"workpool/foo"}, "workpool/foo"},
-		{[]string{"-x"}, ""},
-		{nil, ""},
-	}
-	for _, tc := range cases {
-		if got := BranchArg(tc.args); got != tc.want {
-			t.Errorf("BranchArg(%v) = %q, want %q", tc.args, got, tc.want)
-		}
-	}
-}
-
 // setupPool builds a project repo (main clone) + pool with one free clone.
 func setupPool(t *testing.T) (poolRoot, project, projDir, clonePath string) {
 	t.Helper()

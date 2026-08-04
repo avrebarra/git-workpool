@@ -4,17 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/avrebarra/git-workpool/internal/util"
 )
 
 func TestAbs(t *testing.T) {
 	absDir := t.TempDir()
-	if got := abs(absDir); got != absDir {
-		t.Errorf("abs(%q) = %q, want %q", absDir, got, absDir)
+	if got := util.Abs(absDir); got != absDir {
+		t.Errorf("Abs(%q) = %q, want %q", absDir, got, absDir)
 	}
 	rel := "some/relative/path"
 	want, _ := filepath.Abs(rel)
-	if got := abs(rel); got != want {
-		t.Errorf("abs(%q) = %q, want %q", rel, got, want)
+	if got := util.Abs(rel); got != want {
+		t.Errorf("Abs(%q) = %q, want %q", rel, got, want)
 	}
 }
 
@@ -29,18 +31,18 @@ func TestResolveSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a symlink resolves to its target
-	if got := resolveSymlinks(link); got != canonicalReal {
-		t.Errorf("resolveSymlinks(%q) = %q, want %q", link, got, canonicalReal)
+	if got := util.ResolveSymlinks(link); got != canonicalReal {
+		t.Errorf("ResolveSymlinks(%q) = %q, want %q", link, got, canonicalReal)
 	}
 	// deepest existing ancestor resolved, remainder rejoined
 	deep := filepath.Join(real, "a", "b")
 	wantDeep := filepath.Join(canonicalReal, "a", "b")
-	if got := resolveSymlinks(deep); got != wantDeep {
-		t.Errorf("resolveSymlinks(%q) = %q, want %q", deep, got, wantDeep)
+	if got := util.ResolveSymlinks(deep); got != wantDeep {
+		t.Errorf("ResolveSymlinks(%q) = %q, want %q", deep, got, wantDeep)
 	}
 	deepLink := filepath.Join(link, "a", "b")
-	if got := resolveSymlinks(deepLink); got != wantDeep {
-		t.Errorf("resolveSymlinks(%q) = %q, want %q", deepLink, got, wantDeep)
+	if got := util.ResolveSymlinks(deepLink); got != wantDeep {
+		t.Errorf("ResolveSymlinks(%q) = %q, want %q", deepLink, got, wantDeep)
 	}
 }
 
