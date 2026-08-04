@@ -19,12 +19,19 @@ import (
 func main() {
 	app := &cli.Command{
 		Name:  "git-workpool",
-		Usage: "isolated workpool clones for agent work",
-		Description: `The pool lives outside the repo. Root resolution:
-$GIT_WORKPOOL_HOME, then git config --global workpool.home, then
-$XDG_DATA_HOME/git-workpool. A clone is free when clean and fully pushed to
-the hub. The hub is the only link between your main clone and the workpool
-clones; the pool never touches your remote.`,
+		Usage: "work in parallel without switching branches — clones, hub, no mess",
+		Description: `git-workpool gives you a pool of independent work clones for your repo.
+Work on multiple branches in parallel — or hand tasks to an AI agent —
+without switching, stashing, or touching your main checkout.
+
+How it works:
+  1. A local bare "hub" stores branches — this is the memory
+  2. You claim a free clone, work in it, then publish your branch to the hub
+  3. Pull the branch back into your main clone to review and merge
+  4. Close the clone to free it for the next task
+
+The CLI never commits — you always use plain git commit.
+The pool never touches your remote — only your main clone knows the URL.`,
 		Commands: []*cli.Command{
 			setupCmd(),
 			statusCmd(),
@@ -58,7 +65,7 @@ func withRepo(fn func(pool.Info) error) error {
 func setupCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "setup",
-		Usage: "create hub (first run), then one codenamed clone per call",
+		Usage: "add a clone to the pool (initializes hub on first run)",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
 				return command.Setup(root(), info)
@@ -70,7 +77,7 @@ func setupCmd() *cli.Command {
 func statusCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "status",
-		Usage: "show hub + clones: branch, busy/free, un-pushed/dirty",
+		Usage: "show pool state — clones, branches, free/busy status",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
 				return command.Status(root(), info.Project)
@@ -82,12 +89,12 @@ func statusCmd() *cli.Command {
 func claimCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "claim",
-		Usage:     "sync a free clone to BRANCH and print its folder",
+		Usage:     "sync a free clone to a branch and print its path",
 		ArgsUsage: "[--force NAME] [BRANCH]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "force",
-				Usage: "rescue + reset + claim that clone (permission-gated)",
+				Usage: "force-claim a specific clone by name (rescues un-pushed work first)",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -101,7 +108,7 @@ func claimCmd() *cli.Command {
 func publishCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "publish",
-		Usage:     "push current branch to the hub (main clone or workpool clone)",
+		Usage:     "push current branch to the hub — never commits",
 		ArgsUsage: "[BRANCH]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
@@ -114,7 +121,7 @@ func publishCmd() *cli.Command {
 func pullCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "pull",
-		Usage:     "main clone: fetch + merge the branch from the hub",
+		Usage:     "fetch + merge a branch from the hub into your main clone",
 		ArgsUsage: "[BRANCH]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
@@ -127,7 +134,7 @@ func pullCmd() *cli.Command {
 func closeCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "close",
-		Usage: "workpool clone: discard local state, reset to main, free",
+		Usage: "reset a clone to clean and mark it free for reuse",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
 				return command.Close(root(), info)

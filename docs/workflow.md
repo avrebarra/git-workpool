@@ -1,11 +1,43 @@
-# git-workpool — agent workflow
+# git-workpool — workflow
 
-`git workpool` is a utility: it gives you (or your agent) deterministic
-mechanics and leaves the judgment to you. This page documents the workflow the
-tool was built for — copy and adapt it into your own agent skill, prompt, or
-runbook as you see fit.
+This page documents the intended workflows for both human users and AI agents.
+The tool itself is a utility — it gives you deterministic mechanics and
+leaves the judgment to you.
 
-## The loop
+## Human workflow
+
+The basic loop:
+
+```bash
+cd your-repo
+git workpool setup                     # first time only
+
+# start a task in isolation
+git workpool claim workpool/fix-x      # syncs a clone, prints its path
+# ...work in the printed folder...
+git commit -am "fix the thing"
+git workpool publish                   # push branch to hub
+
+# review the work in your main clone
+git workpool pull workpool/fix-x       # fetch + merge into main
+# ...edit during review, commit...
+git workpool publish workpool/fix-x    # send review edits back
+
+# when the branch is done
+# (inside the workpool clone)
+git workpool close                     # reset, mark free for reuse
+```
+
+The branch in the hub is the memory — you can close the clone, walk away, and
+come back to the branch later from any clone.
+
+## AI agent workflow
+
+`git workpool` was built for agent integration. The branch in the hub
+survives across sessions — a fresh agent session needs no conversation
+history, only the branch name.
+
+### The loop
 
 ```bash
 # agent, inside a workpool clone
@@ -23,10 +55,7 @@ git workpool publish workpool/fix-x    # send review edits back to the hub
 git workpool claim workpool/fix-x      # synced to work + your review edits
 ```
 
-The branch in the hub is the memory. Progress survives across sessions; a new
-agent session needs no conversation history, only the branch name.
-
-## Branch naming (agent judgment — never guess silently)
+### Branch naming (agent judgment — never guess silently)
 
 1. **Explicit** — the user said `use branch <name>` → use it.
 2. **`group=` pattern** — instruction contains `group=<value>` → branch
@@ -35,11 +64,11 @@ agent session needs no conversation history, only the branch name.
    `group=<slug>`, else `workpool/<slug>`.
 4. **None** — ask for a branch name.
 
-## Agent rules
+### Agent rules
 
 | Rule | Description |
 |------|-------------|
-| Mechanics | Always via `git workpool` — never raw fetch/checkout/reset/push of pool commands |
+| Mechanics | Always via `git workpool` — never raw fetch/checkout/reset/push |
 | Commits | Plain `git commit` — the CLI never commits |
 | Publish | After every commit (`git workpool publish`) |
 | Close | Publish first, then `git workpool close` — close discards un-pushed work |
@@ -47,17 +76,16 @@ agent session needs no conversation history, only the branch name.
 | Never reset busy | A busy clone (dirty or un-pushed) is never touched except via `close` or `claim --force` |
 | Report | Clone codename + path + branch + commit hash (minimum) |
 
-## Minimal agent skill skeleton
+### Minimal agent skill skeleton
 
-If you want to ship this to an agent as a skill file, the structure used by
-`git workpool` itself is:
+If you want to ship this to an agent as a skill file, the structure is:
 
 ```markdown
 ---
 name: git-workpool
 description: Workpool model — isolated agent work in independent clones
-bridged by a local hub. Trigger phrases: "setup workpool", "execute this work
-in workpool", "work in workpool on branch <name>", "close workpool".
+bridged by a local hub. Trigger phrases: "setup workpool", "execute this
+work in workpool", "work in workpool on branch <name>", "close workpool".
 ---
 ```
 
@@ -67,4 +95,4 @@ in workpool", "work in workpool on branch <name>", "close workpool".
 
 - [Model](README.md)
 - [Commands](commands.md)
-- [Agent workflow](workflow.md) — you are here
+- [Workflow](workflow.md) — you are here

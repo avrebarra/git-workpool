@@ -3,13 +3,23 @@
 The pool is a **hub** plus any number of **clones**, rooted at a single
 directory on your disk.
 
+```
+  main clone                 hub                   pool clones
+ ┌─────────────┐         ┌──────────┐         ┌─────────────────┐
+ │ your files   │  pull   │ hub.git  │  claim  │ jolly-otter/    │
+ │ (main repo)  │◄────────│ (bare)   │────────►│ brisk-fox/      │
+ │              │         │          │         │ ...              │
+ │ knows remote │ publish │ branches │ publish │ never sees remote│
+ └─────────────┘ ───────►└──────────┘◄────────└─────────────────┘
+
+```
+
 ## Layout
 
 ```
-GIT_WORKPOOL_HOME                <- pool root (default ~/.local/share/git-workpool)
-  <project>/hub.git              <- the hub (bare repo, storage only)
-  <project>/<codename>/          <- codenamed clones, as many as you want
-  <project>/<codename>/
+GIT_WORKPOOL_HOME                ← pool root (default ~/.local/share/git-workpool)
+  <project>/hub.git              ← the hub (bare repo, storage only)
+  <project>/<codename>/          ← codenamed clones, as many as you want
 ```
 
 - **Pool root resolution** (first match wins):
@@ -22,8 +32,6 @@ GIT_WORKPOOL_HOME                <- pool root (default ~/.local/share/git-workpo
   Progress survives across sessions; a fresh agent session needs no
   conversation history, only the branch name.
 - **Clones are full independent copies** — own history, own `node_modules`.
-  Nothing is ever "claimed" in the sense of being locked; your main clone can
-  always check out any branch.
 
 ## Free vs busy
 
@@ -34,7 +42,7 @@ A clone is **free** when clean and fully pushed to the hub. A clone is
 - it is on a non-default branch that has never been pushed to the hub
 - it has commits the hub doesn't have yet (ahead)
 
-Unreleased work never blocks anything — the hub holds it. `claim` only picks
+Unpublished work never blocks anything — the hub holds it. `claim` only picks
 free clones.
 
 ## Safety properties
