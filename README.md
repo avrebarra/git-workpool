@@ -30,12 +30,18 @@ each command — branch naming, publish-after-commit, force-claim permission):
 
 ```bash
 mkdir -p ~/.agents/skills/git-workpool
-cp skill/SKILL.md ~/.agents/skills/git-workpool/SKILL.md
+cp skill/git-workpool/SKILL.md ~/.agents/skills/git-workpool/SKILL.md
 ```
 
-See [`skill/SKILL.md`](skill/SKILL.md). Works with any agent that loads
+See [`skill/git-workpool/SKILL.md`](skill/git-workpool/SKILL.md). Works with any agent that loads
 markdown skills (Claude Code, opencode, Copilot, Gemini — the skills directory
 path varies per platform).
+
+## Tests
+
+```bash
+go test ./...
+```
 
 ## Usage
 

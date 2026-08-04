@@ -77,7 +77,7 @@ Copy this file into your agent's skills directory, e.g.:
 
 ```bash
 mkdir -p ~/.agents/skills/git-workpool
-cp skill/SKILL.md ~/.agents/skills/git-workpool/SKILL.md
+cp skill/git-workpool/SKILL.md ~/.agents/skills/git-workpool/SKILL.md
 ```
 
 Requires the `git workpool` binary on PATH (see README.md).
