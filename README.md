@@ -10,22 +10,23 @@ without ever touching your main checkout — no branch switching, no stashing.
 ## How it works
 
 Clones exchange work through a **hub**: a bare repository on your disk that
-stores branches. You claim a free clone, do the work, publish the branch to
-the hub, then pull it back into your main clone. Branches in the hub are the
+stores branches. You claim a free clone, do the work, store the branch to the
+hub, then fetch it back into your main clone. Branches in the hub are the
 memory — resuming a task only needs the branch name.
 
-The pool is local and self-contained: only your main clone knows the remote
-URL, and the CLI never commits — every commit is a plain `git commit`.
+The pool is local and self-contained: workpool commands only ever talk to the
+local hub, and the CLI never commits — every commit is a plain `git commit`.
+Merging is always plain git — workpool has no merge command.
 
 ```
- ┌──────────┐  publish   ┌───────────┐   pull    ┌──────────────┐
- │  clone A │ ─────────→ │    hub    │ ────────→ │  main clone  │
- │  (busy)  │            │ (bare repo)│          │ (your files)  │
- └──────────┘            └───────────┘          └──────────────┘
+ ┌──────────┐  hub store  ┌───────────┐  hub fetch  ┌──────────────┐
+ │  clone A │ ──────────→ │    hub    │ ──────────→ │  main clone  │
+ │  (busy)  │             │ (bare repo)│            │ (your files)  │
+ └──────────┘             └───────────┘            └──────────────┘
                                 ↑
- ┌──────────┐                  │
- │  clone B │ ─────────────────┘
- │  (free)  │   publish
+ ┌──────────┐                   │
+ │  clone B │ ──────────────────┘
+ │  (free)  │    hub store
  └──────────┘
 ```
 
@@ -40,6 +41,9 @@ Busy when it has uncommitted work or un-pushed commits.
 
 **The CLI never commits** — you always use `git commit`. History stays yours.
 
+**No merge command** — bringing workpool work into your main clone is plain
+`git merge`. The CLI only handles hub plumbing; merging stays with git.
+
 ## Quick start
 
 ```bash
@@ -51,13 +55,16 @@ git workpool status              # see your pool
 git workpool claim workpool/fix-x   # sync free clone, prints its path
 # ...work in the printed folder...
 git commit -am "fix the thing"
-git workpool publish                # push branch to hub
+git workpool hub store workpool/fix-x   # send work to the local hub
 
-# back in main clone
-git workpool pull workpool/fix-x    # review and merge
+# back in main clone — review & test the branch
+git workpool hub fetch workpool/fix-x   # branch available, no merge
+git switch workpool/fix-x               # test it yourself
+git switch main
+git merge workpool/fix-x                # plain git merge into main
 
 # when done
-git workpool close                  # reset clone, mark it free
+git workpool close jolly-otter           # reset clone, mark it free
 ```
 
 ## Commands
@@ -67,11 +74,48 @@ git workpool close                  # reset clone, mark it free
 | `setup`                       | main clone     | add a clone to the pool (initializes hub on first run) |
 | `status`                      | anywhere       | pool state — clones, branches, free/busy               |
 | `claim [--force NAME] BRANCH` | anywhere       | sync a free clone to a branch, print its path          |
-| `publish [BRANCH]`            | either         | push current branch to hub — never commits             |
-| `pull [BRANCH]`               | main clone     | fetch + merge branch from hub                          |
-| `close`                       | workpool clone | reset clone to clean, mark it free                     |
+| `hub store [BRANCH]`          | either         | send committed work to the local hub — never commits, never touches your remote |
+| `hub fetch [BRANCH]`          | main clone     | make a hub branch available locally — no merge, no checkout |
+| `close [NAME]`                | anywhere       | reset a clone to clean, mark it free                   |
 
 Full reference: [docs/commands.md](docs/commands.md).
+
+## Glossary
+
+### Command glossary
+
+Every command is named after the **destination of the data it moves**, so
+direction can't be misread:
+
+| Command | Direction | Effect |
+|---------|-----------|--------|
+| `hub store <branch>` | work → **hub** | send committed work to the local hub (`hub store main` = main → hub, so clones can catch up) |
+| `hub fetch <branch>` | **hub** → main clone | copy the branch into your main clone as a local branch, **no merge, no checkout** — you switch and test yourself |
+| `claim <branch>` | **hub** → clone | sync a free clone to the branch, print its path |
+| `close <name>` | — | reset the clone to clean and free it |
+
+Merging is deliberately **not** a workpool command — after `hub fetch`, use
+plain git (`git merge workpool/fix-x`).
+
+### Action / instruction glossary
+
+When you tell an agent what to do, always name the **target** of the merge.
+The template that can't be misread:
+
+> **"Merge `X` INTO `Y` — resolve conflicts in `Y`. Don't touch `Z`."**
+
+| You say | Agent does |
+|---------|-----------|
+| "Set up a clone to work on X" | `git workpool claim workpool/x` |
+| "Save the work to the hub" | `git workpool hub store workpool/x` |
+| "Pull the branch here, don't merge it, I'll test" | `git workpool hub fetch workpool/x` |
+| "The clone is behind main — merge main INTO the clone" | `git workpool hub store main`, then in the clone: `git fetch origin && git merge origin/main`, resolve conflicts there |
+| "Merge workpool/x INTO main" | `git workpool hub fetch workpool/x`, then `git merge workpool/x` on main |
+| "Free the clone" | `git workpool close <name>` |
+
+**Rule for agents:** if the direction is unclear, **ask — never guess.** When in
+doubt between "merge main into the clone" and "merge the workpool branch into
+main", ask which one before running anything.
 
 ## Install
 
@@ -115,7 +159,7 @@ This isn't about storage efficiency — it's about **task isolation**:
 | Objects and refs          | shared                               | independent per task                 |
 | Stash                     | shared across worktrees              | independent per task                 |
 | Same branch twice         | impossible — one branch per worktree | allowed — tasks are independent      |
-| Changes visible elsewhere | immediately, via shared refs         | only after you `publish` to the hub  |
+| Changes visible elsewhere | immediately, via shared refs         | only after you `hub store` to the hub |
 | Remote access             | every worktree shares remotes        | only main clone knows the remote URL |
 
 Use `git worktree` when you want cheap, zero-copy views over a single repo.
@@ -133,10 +177,13 @@ git workpool claim feature/login
 
 # agent works...
 git commit -am "implement login flow"
-git workpool publish
+git workpool hub store feature/login
 
-# you pull the result and review
-git workpool pull feature/login
+# you fetch the result, review, then merge it yourself
+git workpool hub fetch feature/login
+git switch feature/login   # review...
+git switch main
+git merge feature/login    # plain git merge
 
 # agent picks up after your edits — fresh session is fine
 git workpool claim feature/login

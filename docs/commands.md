@@ -3,6 +3,11 @@
 All commands run as `git workpool <command>`. Run them from inside a git repo
 unless noted.
 
+**Design rule:** every command is named after the *destination* of the data it
+moves. `hub store` sends work **to** the hub; `hub fetch` brings a branch
+**from** the hub. There is deliberately **no merge command** — merging is plain
+git. No workpool command ever touches your remote (`origin` in the main clone).
+
 ## setup
 
 **Where:** main clone only (errors inside a workpool clone).
@@ -54,46 +59,55 @@ git workpool claim workpool/fix-x
 git workpool claim --force flirty-beaver workpool/fix-x
 ```
 
-## publish [BRANCH]
+## hub store [BRANCH]
 
 **Where:** main clone or workpool clone.
 
-Push the current branch to the hub. Never commits.
+Send committed work to the local hub. Never commits, never touches your remote.
 
-- In a workpool clone: `git push origin BRANCH` (BRANCH defaults to the
-  current branch).
-- In the main clone: pushes `HEAD:BRANCH` to the `hub` remote.
+- In a workpool clone: pushes the branch to its `origin` (which **is** the
+  hub).
+- In the main clone:
+  - You're **on** BRANCH (review edits): pushes `HEAD:BRANCH` to the `hub`
+    remote.
+  - Otherwise: finds the clone working on BRANCH and pushes from there.
+- `hub store main` pushes your latest `main` to the hub so clones can catch up.
 
 ```bash
-git workpool publish
-git workpool publish workpool/fix-x
+git workpool hub store
+git workpool hub store workpool/fix-x
+git workpool hub store main
 ```
 
-## pull [BRANCH]
+## hub fetch [BRANCH]
 
 **Where:** main clone only (errors inside a workpool clone).
 
-Fetch and merge a branch from the hub into the main clone.
+Make a hub branch available in the main clone as a local branch. **No merge,
+no checkout** — you switch to it yourself to review and test.
 
-- BRANCH defaults to the current branch. Conflicts must be resolved and
-  committed manually.
+- Creates the local branch if missing, then prints the `git switch` command.
+- BRANCH defaults to the current branch.
 
 ```bash
-git workpool pull workpool/fix-x
+git workpool hub fetch workpool/fix-x
+# → branch workpool/fix-x available in the main clone — switch with: git switch workpool/fix-x
 ```
 
-## close
+## close [NAME]
 
-**Where:** workpool clone only.
+**Where:** anywhere.
 
-Reset the clone to the hub's default branch and mark it free.
+Reset a clone to the hub's default branch and mark it free.
 
+- From the main clone, pass the clone name (`close jolly-otter`); from inside a
+  clone the name defaults to the clone you're in.
 - Prints exactly what will be discarded (dirty changes, un-pushed commits) and
   requires confirmation to proceed.
 - Keeps `node_modules` (via `git clean -fd` semantics, dependencies stay).
 
 ```bash
-git workpool close
+git workpool close jolly-otter
 ```
 
 ## Exit codes and errors
@@ -101,7 +115,7 @@ git workpool close
 - Non-zero exit + message on stderr for any failure.
 - `--help` / no args prints usage.
 - The hub is the only link between your main clone and the clones — the pool
-  never touches your remote.
+  never touches your remote (`origin` in the main clone is never referenced).
 
 ## Docs
 

@@ -16,20 +16,34 @@ git workpool setup                     # first time only
 git workpool claim workpool/fix-x      # syncs a clone, prints its path
 # ...work in the printed folder...
 git commit -am "fix the thing"
-git workpool publish                   # push branch to hub
+git workpool hub store workpool/fix-x  # send work to the local hub
 
-# review the work in your main clone
-git workpool pull workpool/fix-x       # fetch + merge into main
+# review & test the work in your main clone
+git workpool hub fetch workpool/fix-x  # branch available, no merge
+git switch workpool/fix-x              # test it yourself
 # ...edit during review, commit...
-git workpool publish workpool/fix-x    # send review edits back
+git workpool hub store workpool/fix-x  # send review edits back to the hub
+git switch main
+git merge workpool/fix-x               # plain git merge into main
 
 # when the branch is done
-# (inside the workpool clone)
-git workpool close                     # reset, mark free for reuse
+git workpool close jolly-otter         # reset, mark free for reuse
 ```
 
 The branch in the hub is the memory — you can close the clone, walk away, and
 come back to the branch later from any clone.
+
+## When the clone falls behind main
+
+Main advanced (you merged other work) while a clone was busy. Bring the clone
+up to date — always into the clone, never the other way around:
+
+```bash
+git workpool hub store main            # 1. main's latest → hub
+# inside the clone:
+git fetch origin && git merge origin/main   # 2. merge latest main in, resolve conflicts here
+git workpool hub store workpool/fix-x       # 3. send the merged result back
+```
 
 ## AI agent workflow
 
@@ -44,16 +58,35 @@ history, only the branch name.
 git workpool claim workpool/fix-x      # syncs the clone, prints the folder
 # ...do work...
 git commit -am "workpool progress: ..." # commits are always plain git
-git workpool publish                   # push to the hub
+git workpool hub store workpool/fix-x  # send work to the hub
 
 # you, in your main clone
-git workpool pull workpool/fix-x       # review the work in your files
+git workpool hub fetch workpool/fix-x  # branch available for review/testing
 # ...edit during review, commit...
-git workpool publish workpool/fix-x    # send review edits back to the hub
+git workpool hub store workpool/fix-x  # send review edits back to the hub
 
 # agent continues (fresh session fine)
 git workpool claim workpool/fix-x      # synced to work + your review edits
 ```
+
+### Talking to the agent — never let it guess direction
+
+Always name the **target** of a merge. The template that can't be misread:
+
+> **"Merge `X` INTO `Y` — resolve conflicts in `Y`. Don't touch `Z`."**
+
+| You say | Agent does |
+|---------|-----------|
+| "Set up a clone to work on X" | `git workpool claim workpool/x` |
+| "Save the work to the hub" | `git workpool hub store workpool/x` |
+| "Pull the branch here, don't merge it, I'll test" | `git workpool hub fetch workpool/x` |
+| "The clone is behind main — merge main INTO the clone" | `git workpool hub store main`, then in the clone: `git fetch origin && git merge origin/main`, resolve conflicts there |
+| "Merge workpool/x INTO main" | `git workpool hub fetch workpool/x`, then `git merge workpool/x` on main |
+| "Free the clone" | `git workpool close <name>` |
+
+**Non-negotiable rule:** if the direction is unclear, **ask — never guess.**
+"Merge main" is ambiguous: it can mean "merge main into the clone" or "merge
+the workpool branch into main". Ask which one before running anything.
 
 ### Branch naming (agent judgment — never guess silently)
 
@@ -68,12 +101,15 @@ git workpool claim workpool/fix-x      # synced to work + your review edits
 
 | Rule | Description |
 |------|-------------|
-| Mechanics | Always via `git workpool` — never raw fetch/checkout/reset/push |
+| Mechanics | Always via `git workpool` — never raw fetch/checkout/reset/push pool commands |
 | Commits | Plain `git commit` — the CLI never commits |
-| Publish | After every commit (`git workpool publish`) |
-| Close | Publish first, then `git workpool close` — close discards un-pushed work |
+| Hub plumbing | `hub store` / `hub fetch` only — never raw git against the `hub` remote |
+| Remote | Never `fetch`/`pull`/`push origin` in the main clone — the real remote is only ever touched by the user, on `main`, after merge |
+| Store | After every commit (`git workpool hub store <branch>`) |
+| Close | Store first, then `git workpool close <name>` — close discards un-pushed work |
 | Force-claim | `claim --force NAME` requires explicit user permission AND an explicit clone name. Never auto-pick |
 | Never reset busy | A busy clone (dirty or un-pushed) is never touched except via `close` or `claim --force` |
+| Ask, don't guess | Direction unclear (e.g. "merge main") → ask which way before running anything |
 | Report | Clone codename + path + branch + commit hash (minimum) |
 
 ### Minimal agent skill skeleton
@@ -89,7 +125,8 @@ work in workpool", "work in workpool on branch <name>", "close workpool".
 ---
 ```
 
-...then the "The loop", "Branch naming", and "Agent rules" sections above.
+...then the "The loop", "Talking to the agent", "Branch naming", and "Agent
+rules" sections above.
 
 ## Docs
 

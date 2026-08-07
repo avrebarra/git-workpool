@@ -6,10 +6,10 @@ directory on your disk.
 ```
   main clone                 hub                   pool clones
  ┌─────────────┐         ┌──────────┐         ┌─────────────────┐
- │ your files   │  pull   │ hub.git  │  claim  │ jolly-otter/    │
+ │ your files   │  fetch  │ hub.git  │  claim  │ jolly-otter/    │
  │ (main repo)  │◄────────│ (bare)   │────────►│ brisk-fox/      │
  │              │         │          │         │ ...              │
- │ knows remote │ publish │ branches │ publish │ never sees remote│
+ │ knows remote │  store  │ branches │  store  │ never sees remote│
  └─────────────┘ ───────►└──────────┘◄────────└─────────────────┘
 
 ```
@@ -32,6 +32,11 @@ GIT_WORKPOOL_HOME                ← pool root (default ~/.local/share/git-workp
   Progress survives across sessions; a fresh agent session needs no
   conversation history, only the branch name.
 - **Clones are full independent copies** — own history, own `node_modules`.
+- **`hub store` / `hub fetch` only.** All data into or out of the hub goes
+  through these two commands — `store` sends work **to** the hub, `fetch`
+  brings a branch **from** the hub (no merge). Merging is plain git.
+- **Never your remote.** Workpool commands only reference the `hub` remote.
+  The main clone's `origin` (your real remote) is never touched.
 
 ## Free vs busy
 
