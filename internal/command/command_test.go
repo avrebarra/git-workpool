@@ -81,20 +81,27 @@ func TestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	cloneInfo := pool.Info{Root: clonePath, Project: project, IsClone: true, Clone: filepath.Base(clonePath)}
-	if err := Publish(cloneInfo, "workpool/foo"); err != nil {
+	if err := Store(poolRoot, cloneInfo, "workpool/foo"); err != nil {
 		t.Fatal(err)
 	}
 	if refs := refs(t, pool.HubDir(poolRoot, project)); !strings.Contains(refs, "workpool/foo") {
 		t.Fatalf("hub missing workpool/foo, refs:\n%s", refs)
 	}
 
-	// pull the work into the main clone
+	// fetch the work into the main clone — available, but NOT merged
 	mainInfo := pool.Info{Root: projDir, Project: project}
-	if err := Pull(mainInfo, "workpool/foo"); err != nil {
+	if err := HubFetch(mainInfo, "workpool/foo"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(projDir, "feature.txt")); err != nil {
-		t.Fatalf("main clone missing pulled feature file: %v", err)
+	if !gitx.HasLocalBranch(projDir, "workpool/foo") {
+		t.Fatal("hub fetch did not create local branch workpool/foo")
+	}
+	if _, err := os.Stat(filepath.Join(projDir, "feature.txt")); !os.IsNotExist(err) {
+		t.Fatalf("hub fetch merged into main clone working tree: %v", err)
+	}
+	out, err := gitx.Run(projDir, "show", "workpool/foo:feature.txt")
+	if err != nil || !strings.Contains(out, "feature") {
+		t.Fatalf("branch workpool/foo missing feature.txt: %q, %v", out, err)
 	}
 
 	// re-claim without a branch re-engages the pushed branch
@@ -106,7 +113,7 @@ func TestLifecycle(t *testing.T) {
 	}
 
 	// close: clone resets to default branch, branch work discarded
-	if err := Close(poolRoot, cloneInfo); err != nil {
+	if err := Close(poolRoot, cloneInfo, ""); err != nil {
 		t.Fatal(err)
 	}
 	if b := headBranch(t, clonePath); b != "main" {
@@ -169,6 +176,54 @@ func TestForceClaimPushesCommits(t *testing.T) {
 	}
 	if !strings.Contains(out, "wip") {
 		t.Fatalf("rescued commit missing from hub: %q", out)
+	}
+}
+
+func TestStoreFromMain(t *testing.T) {
+	poolRoot, project, projDir, clonePath := setupPool(t)
+	mainInfo := pool.Info{Root: projDir, Project: project}
+
+	// claim, work in the clone, commit — but don't store from the clone
+	if err := Claim(poolRoot, project, "", "workpool/review"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(clonePath, "a.txt", "a\n"); err != nil {
+		t.Fatal(err)
+	}
+	gitx.Run(clonePath, "add", "-A")
+	if _, err := gitx.Run(clonePath, "commit", "-m", "work"); err != nil {
+		t.Fatal(err)
+	}
+
+	// store from the main clone: finds the clone on the branch and pushes from it
+	if err := Store(poolRoot, mainInfo, "workpool/review"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := gitx.Run(pool.HubDir(poolRoot, project), "log", "--oneline", "workpool/review")
+	if err != nil || !strings.Contains(out, "work") {
+		t.Fatalf("hub missing clone work: %q, %v", out, err)
+	}
+
+	// fetch into main, review on the branch, store review edits back
+	if err := HubFetch(mainInfo, "workpool/review"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitx.Run(projDir, "switch", "workpool/review"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(projDir, "review.txt", "review\n"); err != nil {
+		t.Fatal(err)
+	}
+	gitx.Run(projDir, "add", "-A")
+	if _, err := gitx.Run(projDir, "commit", "-m", "review edit"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Store(poolRoot, mainInfo, "workpool/review"); err != nil {
+		t.Fatal(err)
+	}
+	out, err = gitx.Run(pool.HubDir(poolRoot, project), "log", "--oneline", "workpool/review")
+	if err != nil || !strings.Contains(out, "review edit") {
+		t.Fatalf("hub missing review edit: %q, %v", out, err)
 	}
 }
 

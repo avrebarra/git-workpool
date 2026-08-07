@@ -26,18 +26,17 @@ without switching, stashing, or touching your main checkout.
 
 How it works:
   1. A local bare "hub" stores branches — this is the memory
-  2. You claim a free clone, work in it, then publish your branch to the hub
-  3. Pull the branch back into your main clone to review and merge
+  2. You claim a free clone, work in it, then store the branch to the hub
+  3. Fetch the branch back into your main clone to review and test
   4. Close the clone to free it for the next task
 
 The CLI never commits — you always use plain git commit.
-The pool never touches your remote — only your main clone knows the URL.`,
+The pool only talks to the local hub — your remote is never touched.`,
 		Commands: []*cli.Command{
 			setupCmd(),
 			statusCmd(),
 			claimCmd(),
-			publishCmd(),
-			pullCmd(),
+			hubCmd(),
 			closeCmd(),
 		},
 		// route every failure back to main() so exit codes stay uniform (1)
@@ -105,27 +104,39 @@ func claimCmd() *cli.Command {
 	}
 }
 
-func publishCmd() *cli.Command {
+func hubCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "publish",
-		Usage:     "push current branch to the hub — never commits",
+		Name:      "hub",
+		Usage:     "talk to the local hub — never touches your remote",
+		ArgsUsage: "store|fetch",
+		Commands: []*cli.Command{
+			hubStoreCmd(),
+			hubFetchCmd(),
+		},
+	}
+}
+
+func hubStoreCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "store",
+		Usage:     "send committed work to the local hub",
 		ArgsUsage: "[BRANCH]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
-				return command.Publish(info, cmd.Args().First())
+				return command.Store(root(), info, cmd.Args().First())
 			})
 		},
 	}
 }
 
-func pullCmd() *cli.Command {
+func hubFetchCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "pull",
-		Usage:     "fetch + merge a branch from the hub into your main clone",
+		Name:      "fetch",
+		Usage:     "make a hub branch available in the main clone — no merge, no checkout",
 		ArgsUsage: "[BRANCH]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
-				return command.Pull(info, cmd.Args().First())
+				return command.HubFetch(info, cmd.Args().First())
 			})
 		},
 	}
@@ -133,11 +144,12 @@ func pullCmd() *cli.Command {
 
 func closeCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "close",
-		Usage: "reset a clone to clean and mark it free for reuse",
+		Name:      "close",
+		Usage:     "reset a clone to clean and mark it free for reuse",
+		ArgsUsage: "[NAME]",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
-				return command.Close(root(), info)
+				return command.Close(root(), info, cmd.Args().First())
 			})
 		},
 	}

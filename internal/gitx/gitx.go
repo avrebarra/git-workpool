@@ -62,10 +62,27 @@ func CountDirty(dir string) int {
 	return len(strings.Split(out, "\n"))
 }
 
-// HasRemoteBranch reports whether remote has a tracking branch named branch.
+// HasRemoteBranch reports whether the clone's origin has a tracking branch named branch.
 func HasRemoteBranch(dir, branch string) bool {
-	out, err := Run(dir, "rev-parse", "--verify", "--quiet", "origin/"+branch)
+	return HasRemoteBranchOf(dir, "origin", branch)
+}
+
+// HasRemoteBranchOf reports whether remote has a tracking branch named branch.
+func HasRemoteBranchOf(dir, remote, branch string) bool {
+	out, err := Run(dir, "rev-parse", "--verify", "--quiet", remote+"/"+branch)
 	return err == nil && out != ""
+}
+
+// HasLocalBranch reports whether dir has a local branch named branch.
+func HasLocalBranch(dir, branch string) bool {
+	out, err := Run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	return err == nil && out != ""
+}
+
+// CreateBranch creates a local branch at start point without checking it out.
+func CreateBranch(dir, branch, start string) error {
+	_, err := Run(dir, "branch", branch, start)
+	return err
 }
 
 // CountCommitsAhead counts commits on branch that remote does not have.
@@ -122,6 +139,12 @@ func Clone(url, dst string) error {
 // Fetch pulls refs from remote in dir.
 func Fetch(dir, remote string) error {
 	_, err := Run(dir, "fetch", remote)
+	return err
+}
+
+// FetchBranch fetches a single branch from remote in dir.
+func FetchBranch(dir, remote, branch string) error {
+	_, err := Run(dir, "fetch", remote, branch)
 	return err
 }
 

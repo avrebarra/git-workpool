@@ -136,20 +136,21 @@ func Claim(poolRoot, project, force, branch string) error {
 	return nil
 }
 
-// Publish pushes the current branch to the hub. Never commits.
-// In the main clone the branch exists only as a hub ref, so push HEAD:<branch>.
-func Publish(info pool.Info, branch string) error {
+// Store sends committed work to the local hub. Never commits, never touches
+// the remote. From a clone it pushes origin (the hub). From the main clone it
+// pushes HEAD when you are on the branch, else finds the clone working on it.
+func Store(poolRoot string, info pool.Info, branch string) error {
 	if branch == "" {
 		branch, _ = gitx.GetCurrentBranch(info.Root)
 	}
 	if info.IsClone {
-		return publishFromClone(info, branch)
+		return storeFromClone(info, branch)
 	}
-	return publishFromMain(info, branch)
+	return storeFromMain(poolRoot, info, branch)
 }
 
-// publishFromClone pushes the clone's branch to its origin (the hub).
-func publishFromClone(info pool.Info, branch string) error {
+// storeFromClone pushes the clone's branch to its origin (the hub).
+func storeFromClone(info pool.Info, branch string) error {
 	if !gitx.HasRemote(info.Root, "origin") {
 		return fmt.Errorf("no origin remote — run `git workpool setup` first")
 	}
@@ -158,30 +159,50 @@ func publishFromClone(info pool.Info, branch string) error {
 		fmt.Println(out)
 	}
 	if err != nil {
-		return fmt.Errorf("publish failed: %v", err)
+		return fmt.Errorf("store failed: %v", err)
 	}
 	return nil
 }
 
-// publishFromMain pushes HEAD to the hub remote under the branch name.
-func publishFromMain(info pool.Info, branch string) error {
+// storeFromMain pushes to the hub remote. On the branch (review edits) it
+// pushes HEAD; otherwise it finds the clone working on the branch and pushes
+// from there. Only ever talks to the local hub — never the real remote.
+func storeFromMain(poolRoot string, info pool.Info, branch string) error {
 	if !gitx.HasRemote(info.Root, "hub") {
 		return fmt.Errorf("no hub remote — run `git workpool setup` first")
 	}
-	out, err := gitx.PushHeadBranch(info.Root, "hub", branch)
-	if out != "" {
-		fmt.Println(out)
+	cur, _ := gitx.GetCurrentBranch(info.Root)
+	if cur == branch {
+		out, err := gitx.PushHeadBranch(info.Root, "hub", branch)
+		if out != "" {
+			fmt.Println(out)
+		}
+		if err != nil {
+			return fmt.Errorf("store failed: %v", err)
+		}
+		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("publish failed: %v", err)
+	for _, st := range clone.States(poolRoot, info.Project) {
+		if st.Branch == branch {
+			out, err := gitx.PushBranch(st.Path, "origin", branch)
+			if out != "" {
+				fmt.Println(out)
+			}
+			if err != nil {
+				return fmt.Errorf("store failed: %v", err)
+			}
+			fmt.Printf("stored from clone %s\n", st.Name)
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("no clone is on branch %q and you are not on it — switch to %q in the main clone, or check `git workpool status`", branch, branch)
 }
 
-// Pull fetches and merges the branch from the hub into the main clone.
-func Pull(info pool.Info, branch string) error {
+// HubFetch makes a hub branch available in the main clone as a local branch.
+// No merge, no checkout — you switch to it yourself to review and test.
+func HubFetch(info pool.Info, branch string) error {
 	if info.IsClone {
-		return fmt.Errorf("pull runs in the main clone, not inside a workpool clone")
+		return fmt.Errorf("hub fetch runs in the main clone, not inside a workpool clone")
 	}
 	if !gitx.HasRemote(info.Root, "hub") {
 		return fmt.Errorf("no hub remote — run `git workpool setup` first")
@@ -189,33 +210,40 @@ func Pull(info pool.Info, branch string) error {
 	if branch == "" {
 		branch, _ = gitx.GetCurrentBranch(info.Root)
 	}
-	if err := gitx.Fetch(info.Root, "hub"); err != nil {
+	if err := gitx.FetchBranch(info.Root, "hub", branch); err != nil {
 		return fmt.Errorf("fetch hub failed: %v", err)
 	}
-	out, err := gitx.MergeRemoteBranch(info.Root, "hub", branch)
-	if out != "" {
-		fmt.Println(out)
+	if !gitx.HasRemoteBranchOf(info.Root, "hub", branch) {
+		return fmt.Errorf("hub has no branch %q — check `git workpool status`", branch)
 	}
-	if err != nil {
-		return fmt.Errorf("merge failed — resolve conflicts, then commit: %v", err)
+	if !gitx.HasLocalBranch(info.Root, branch) {
+		if err := gitx.CreateBranch(info.Root, branch, "hub/"+branch); err != nil {
+			return fmt.Errorf("create branch failed: %v", err)
+		}
 	}
+	fmt.Printf("branch %s available in the main clone — switch with: git switch %s\n", branch, branch)
 	return nil
 }
 
 // Close discards local clone state and resets to the hub default branch.
-func Close(poolRoot string, info pool.Info) error {
-	if !info.IsClone {
-		return fmt.Errorf("close runs inside a workpool clone")
+// Runs from anywhere: from the main clone pass the clone name, from inside a
+// clone the name defaults to the clone you're in.
+func Close(poolRoot string, info pool.Info, name string) error {
+	if name == "" {
+		if !info.IsClone {
+			return fmt.Errorf("close needs a clone name — run `git workpool status` to see clones")
+		}
+		name = info.Clone
 	}
 	var s *clone.State
 	for _, st := range clone.States(poolRoot, info.Project) {
-		if st.Name == info.Clone {
+		if st.Name == name {
 			s = &st
 			break
 		}
 	}
 	if s == nil {
-		return fmt.Errorf("%s is not a workpool clone", info.Clone)
+		return fmt.Errorf("no clone named %q in the pool — run `git workpool status`", name)
 	}
 
 	// report exactly what will be discarded before resetting
