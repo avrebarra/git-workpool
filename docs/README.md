@@ -52,10 +52,10 @@ free clones.
 
 ## Safety properties
 
-- **Never lost work:** `claim --force NAME` rescues first — it pushes
+- **Never lost work:** `claim --clone NAME --force` rescues first — it pushes
   un-pushed commits to the hub and stashes dirty files — before resetting the
-  clone. It requires an explicit clone name; it never auto-picks what to
-  sacrifice.
+  clone. `--clone` pins to a clone (fails if busy), `--force` overrides busy.
+  It requires an explicit clone name; it never auto-picks what to sacrifice.
 - **Never touches your remote:** the pool only ever talks to your local hub.
   Only your main clone knows the remote URL.
 - **The CLI never commits.** Commits are always plain `git commit`, so
