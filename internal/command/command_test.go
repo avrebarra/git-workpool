@@ -59,7 +59,7 @@ func TestLifecycle(t *testing.T) {
 	poolRoot, project, projDir, clonePath := setupPool(t)
 
 	// claim a new branch, verify clone synced
-	if err := Claim(poolRoot, project, "", "workpool/foo"); err != nil {
+	if err := Claim(poolRoot, project, "", false, "workpool/foo"); err != nil {
 		t.Fatal(err)
 	}
 	if b := headBranch(t, clonePath); b != "workpool/foo" {
@@ -105,7 +105,7 @@ func TestLifecycle(t *testing.T) {
 	}
 
 	// re-claim without a branch re-engages the pushed branch
-	if err := Claim(poolRoot, project, "", ""); err != nil {
+	if err := Claim(poolRoot, project, "", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if b := headBranch(t, clonePath); b != "workpool/foo" {
@@ -132,7 +132,7 @@ func TestForceClaimStash(t *testing.T) {
 		t.Fatal(err)
 	}
 	codename := filepath.Base(clonePath)
-	if err := Claim(poolRoot, project, codename, "workpool/force"); err != nil {
+	if err := Claim(poolRoot, project, codename, true, "workpool/force"); err != nil {
 		t.Fatal(err)
 	}
 	if b := headBranch(t, clonePath); b != "workpool/force" {
@@ -154,7 +154,7 @@ func TestForceClaimPushesCommits(t *testing.T) {
 	poolRoot, project, _, clonePath := setupPool(t)
 
 	// claim, commit without publishing, then force-claim another branch
-	if err := Claim(poolRoot, project, "", "workpool/wip"); err != nil {
+	if err := Claim(poolRoot, project, "", false, "workpool/wip"); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeFile(clonePath, "wip.txt", "wip\n"); err != nil {
@@ -165,7 +165,7 @@ func TestForceClaimPushesCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	codename := filepath.Base(clonePath)
-	if err := Claim(poolRoot, project, codename, "workpool/other"); err != nil {
+	if err := Claim(poolRoot, project, codename, true, "workpool/other"); err != nil {
 		t.Fatal(err)
 	}
 	// un-pushed commits were rescued to the hub before the reset
@@ -184,7 +184,7 @@ func TestStoreFromMain(t *testing.T) {
 	mainInfo := pool.Info{Root: projDir, Project: project}
 
 	// claim, work in the clone, commit — but don't store from the clone
-	if err := Claim(poolRoot, project, "", "workpool/review"); err != nil {
+	if err := Claim(poolRoot, project, "", false, "workpool/review"); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeFile(clonePath, "a.txt", "a\n"); err != nil {

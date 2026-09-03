@@ -92,19 +92,19 @@ func Status(poolRoot, project string) error {
 	return nil
 }
 
-// Claim syncs a free clone to branch; --force NAME rescues + resets it first.
-func Claim(poolRoot, project, force, branch string) error {
+// Claim syncs a free clone to branch; --clone NAME pins to a clone, --force rescues + resets it first.
+func Claim(poolRoot, project, cloneName string, force bool, branch string) error {
 	states := clone.States(poolRoot, project)
 	if len(states) == 0 {
 		return fmt.Errorf("no clones in pool — run `git workpool setup`")
 	}
-	target, err := clone.PickTarget(states, force)
+	target, err := clone.PickTarget(states, cloneName, force)
 	if err != nil {
 		return err
 	}
 
 	// force-claims rescue the clone's work before touching it
-	if force != "" {
+	if force && cloneName != "" {
 		if err := clone.Rescue(target); err != nil {
 			return err
 		}

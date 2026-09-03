@@ -89,16 +89,41 @@ func claimCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "claim",
 		Usage:     "sync a free clone to a branch and print its path",
-		ArgsUsage: "[--force NAME] [BRANCH]",
+		ArgsUsage: "[--clone NAME] [--force] [BRANCH]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
+				Name:  "clone",
+				Usage: "pin to a specific clone by name (fails if busy unless --force)",
+			},
+			&cli.BoolFlag{
 				Name:  "force",
-				Usage: "force-claim a specific clone by name (rescues un-pushed work first)",
+				Usage: "with --clone, force-claim even if busy (rescues un-pushed work first)",
+			},
+			// deprecated: --force NAME string form (now --clone NAME --force)
+			&cli.StringFlag{
+				Name:   "force-clone",
+				Hidden: true,
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return withRepo(func(info pool.Info) error {
-				return command.Claim(root(), info.Project, cmd.String("force"), cmd.Args().First())
+				cloneName := cmd.String("clone")
+				force := cmd.Bool("force")
+				// backward compat: --force NAME (string flag via --force-clone hidden or legacy --force with value)
+				// urfave v3 parses --force as bool, so "--force NAME" becomes force=true + args=[NAME, BRANCH]
+				// detect that legacy shape: --force set but no --clone, and two args where first looks like a clone name
+				args := cmd.Args().Slice()
+				branch := cmd.Args().First()
+				if cloneName == "" && force && len(args) >= 2 {
+					// heuristic: legacy "claim --force <clone> <branch>" → args[0]=clone, args[1]=branch
+					cloneName = args[0]
+					branch = args[1]
+				}
+				if fc := cmd.String("force-clone"); fc != "" {
+					cloneName = fc
+					force = true
+				}
+				return command.Claim(root(), info.Project, cloneName, force, branch)
 			})
 		},
 	}

@@ -33,21 +33,30 @@ func TestPickTarget(t *testing.T) {
 	busy := State{Name: "busy", Branch: "feature", Default: "main"}
 
 	// first free wins
-	target, err := PickTarget([]State{busy, free}, "")
+	target, err := PickTarget([]State{busy, free}, "", false)
 	if err != nil || target.Name != "free" {
 		t.Errorf("PickTarget free = %v, %v; want free", target, err)
 	}
-	// force by name picks even a busy clone
-	target, err = PickTarget([]State{busy, free}, "busy")
+	// --clone with --force picks even a busy clone
+	target, err = PickTarget([]State{busy, free}, "busy", true)
 	if err != nil || target.Name != "busy" {
-		t.Errorf("PickTarget force = %v, %v; want busy", target, err)
+		t.Errorf("PickTarget clone+force = %v, %v; want busy", target, err)
 	}
-	// unknown force name
-	if _, err := PickTarget([]State{free}, "nope"); err == nil {
-		t.Error("PickTarget unknown force: want error")
+	// --clone without --force rejects busy
+	if _, err := PickTarget([]State{busy, free}, "busy", false); err == nil {
+		t.Error("PickTarget clone busy without force: want error")
+	}
+	// --clone free without force succeeds
+	target, err = PickTarget([]State{busy, free}, "free", false)
+	if err != nil || target.Name != "free" {
+		t.Errorf("PickTarget clone free = %v, %v; want free", target, err)
+	}
+	// unknown clone name
+	if _, err := PickTarget([]State{free}, "nope", false); err == nil {
+		t.Error("PickTarget unknown clone: want error")
 	}
 	// all busy
-	if _, err := PickTarget([]State{busy}, ""); err == nil {
+	if _, err := PickTarget([]State{busy}, "", false); err == nil {
 		t.Error("PickTarget all busy: want error")
 	}
 }
