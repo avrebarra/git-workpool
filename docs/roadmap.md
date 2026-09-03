@@ -29,28 +29,6 @@ statuses:
 
 ## Active
 
-### 2 — workpool listing should hide non-clone folders
-```lokan
-id: "2"
-title: workpool listing should hide non-clone folders
-status: backlog
-created: "2026-09-03"
-updated: "2026-09-03"
-tags:
-    - bug
-```
-
-````markdown
-# workpool listing should hide non-clone folders
-
-listClones currently lists every directory in the pool except hub.git. Filter out stray/non-clone folders so status only shows actual workpool clones (e.g. validate .git exists or is a git repo).
-
-## Notes
-
-
-## Work Log
-````
-
 ### 3 — status and listing should show clone ID numbers in table
 ```lokan
 id: "3"
@@ -97,3 +75,24 @@ Pain point: README buries install. Restructure so first section is quick start /
 
 ## Archive
 
+### 2 — workpool listing should hide non-clone folders
+```lokan
+id: "2"
+title: workpool listing should hide non-clone folders
+status: done
+created: "2026-09-03"
+updated: "2026-09-03"
+tags:
+    - bug
+```
+
+````markdown
+# workpool listing should hide non-clone folders
+
+listClones currently lists every directory in the pool except hub.git. Filter out stray/non-clone folders so status only shows actual workpool clones (e.g. validate .git exists or is a git repo).
+
+## Notes
+
+
+## Work Log
+````
