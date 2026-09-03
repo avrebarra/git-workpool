@@ -147,10 +147,25 @@ func NextCodename(poolRoot, project string) string {
 }
 
 // randomCodename builds an adjective-animal name, e.g. "flirty-beaver".
-// gofakeit can emit multi-word tokens ("guinea pig"), so words are joined
-// with hyphens to keep the name a single path-safe token.
+// Ubuntu-style: strictly two memorable single-words (descriptive adjective + animal).
+// Uses AdjectiveDescriptive (single-word, e.g. "brave") and a single-word Animal
+// (rejects "guinea pig", "sea lion" etc.) so the result is always exactly
+// one hyphen, easy to say and remember — e.g. "precise-pangolin".
 func randomCodename() string {
-	return slug(gofakeit.Adjective()) + "-" + slug(gofakeit.Animal())
+	var adj, animal string
+	for {
+		adj = gofakeit.AdjectiveDescriptive()
+		if !strings.Contains(adj, " ") {
+			break
+		}
+	}
+	for {
+		animal = gofakeit.Animal()
+		if !strings.Contains(animal, " ") {
+			break
+		}
+	}
+	return slug(adj) + "-" + slug(animal)
 }
 
 // slug lowercases and joins whitespace-separated words with hyphens.
