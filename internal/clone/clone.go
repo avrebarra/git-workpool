@@ -185,6 +185,8 @@ func usedCodenames(poolRoot, project string) map[string]bool {
 }
 
 // listClones returns clone folder names (excluding the hub), sorted.
+// stray/non-clone folders are filtered — only entries containing a .git
+// entry (dir or file, covering normal clones and worktrees) are considered clones.
 func listClones(poolRoot, project string) ([]string, error) {
 	entries, err := os.ReadDir(pool.ProjectDir(poolRoot, project))
 	if err != nil {
@@ -192,9 +194,14 @@ func listClones(poolRoot, project string) ([]string, error) {
 	}
 	var names []string
 	for _, e := range entries {
-		if e.IsDir() && e.Name() != "hub.git" {
-			names = append(names, e.Name())
+		if !e.IsDir() || e.Name() == "hub.git" {
+			continue
 		}
+		clonePath := filepath.Join(pool.ProjectDir(poolRoot, project), e.Name())
+		if _, err := os.Stat(filepath.Join(clonePath, ".git")); err != nil {
+			continue
+		}
+		names = append(names, e.Name())
 	}
 	sort.Strings(names)
 	return names, nil

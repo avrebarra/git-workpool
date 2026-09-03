@@ -78,8 +78,8 @@ func TestNextCodename(t *testing.T) {
 	if !wordWord(first) {
 		t.Errorf("NextCodename = %q, want word-word format", first)
 	}
-	// never reuses a taken name
-	if err := os.MkdirAll(filepath.Join(project, first), 0o755); err != nil {
+	// never reuses a taken name (simulate a real clone with a .git entry)
+	if err := os.MkdirAll(filepath.Join(project, first, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	second := NextCodename(pdir, "proj")
@@ -89,6 +89,9 @@ func TestNextCodename(t *testing.T) {
 	if !wordWord(second) {
 		t.Errorf("NextCodename = %q, want word-word format", second)
 	}
+	if err := os.MkdirAll(filepath.Join(project, second, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	// a handful of setup calls yields all-distinct codenames
 	seen := map[string]bool{first: true, second: true}
 	for i := 0; i < 10; i++ {
@@ -97,7 +100,7 @@ func TestNextCodename(t *testing.T) {
 			t.Errorf("NextCodename repeated %q", name)
 		}
 		seen[name] = true
-		if err := os.MkdirAll(filepath.Join(project, name), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(project, name, ".git"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
