@@ -51,11 +51,13 @@ status/listing currently shows a table without row numbers/IDs. Add a numbers co
 ## Work Log
 ````
 
+## Archive
+
 ### 4 — refine README — quick start first, theory after
 ```lokan
 id: "4"
 title: refine README — quick start first, theory after
-status: backlog
+status: done
 created: "2026-09-03"
 updated: "2026-09-03"
 tags:
@@ -72,8 +74,6 @@ Pain point: README buries install. Restructure so first section is quick start /
 
 ## Work Log
 ````
-
-## Archive
 
 ### 2 — workpool listing should hide non-clone folders
 ```lokan

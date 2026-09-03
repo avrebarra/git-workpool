@@ -7,42 +7,10 @@ its own files and history.
 It's for running work in isolation so that you can work in parallel, or hand tasks to an agent,
 without ever touching your main checkout — no branch switching, no stashing.
 
-## How it works
-
-Clones exchange work through a **hub**: a bare repository on your disk that
-stores branches. You claim a free clone, do the work, store the branch to the
-hub, then fetch it back into your main clone. Branches in the hub are the
-memory — resuming a task only needs the branch name.
-
-The pool is local and self-contained: workpool commands only ever talk to the
-local hub, and the CLI never commits — every commit is a plain `git commit`.
-Merging is always plain git — workpool has no merge command.
-
+```bash
+curl -fsSL https://raw.githubusercontent.com/avrebarra/git-workpool/main/install.sh | sh  # → ~/.local/bin
+# any git-workpool on PATH becomes `git workpool` — see Full Install below for alternatives
 ```
- ┌──────────┐  hub store  ┌───────────┐  hub fetch  ┌──────────────┐
- │  clone A │ ──────────→ │    hub    │ ──────────→ │  main clone  │
- │  (busy)  │             │ (bare repo)│            │ (your files)  │
- └──────────┘             └───────────┘            └──────────────┘
-                                ↑
- ┌──────────┐                   │
- │  clone B │ ──────────────────┘
- │  (free)  │    hub store
- └──────────┘
-```
-
-**Hub** — a bare git repo on your disk. Stores branches. The only link between
-clones. Never touches your remote.
-
-**Clone** — a full independent checkout with a codename (e.g. `jolly-otter`).
-Each has its own files, history, and dependencies.
-
-**Free vs busy** — free when clean and fully pushed to the hub. Ready to claim.
-Busy when it has uncommitted work or un-pushed commits.
-
-**The CLI never commits** — you always use `git commit`. History stays yours.
-
-**No merge command** — bringing workpool work into your main clone is plain
-`git merge`. The CLI only handles hub plumbing; merging stays with git.
 
 ## Quick start
 
@@ -67,25 +35,37 @@ git merge workpool/fix-x                # plain git merge into main
 git workpool close jolly-otter           # reset clone, mark it free
 ```
 
-## Commands
+## How it works
 
-| Command                       | Where          | What it does                                           |
-| ----------------------------- | -------------- | ------------------------------------------------------ |
-| `setup`                       | main clone     | add a clone to the pool (initializes hub on first run) |
-| `status`                      | anywhere       | pool state — clones, branches, free/busy               |
-| `claim [--clone NAME] [--force] BRANCH` | anywhere       | sync a free clone to a branch, print its path (`--clone` pins to a clone, `--force` overrides busy) |
-| `hub store [BRANCH]`          | either         | send committed work to the local hub — never commits, never touches your remote |
-| `hub fetch [BRANCH]`          | main clone     | make a hub branch available locally — no merge, no checkout |
-| `close [NAME]`                | anywhere       | reset a clone to clean, mark it free                   |
+Clones exchange work through a **hub** — a bare repository on your disk that
+stores branches. You claim a free clone, do the work, store the branch to the
+hub, then fetch it back into your main clone. Branches in the hub are the
+memory — resuming a task only needs the branch name.
 
-Full reference: [docs/commands.md](docs/commands.md).
+> **Hub is just another git remote — but local.** Workpool runs `git remote add hub <pool>/<project>/hub.git` (a bare repo on disk). It works exactly like `origin`, except it never leaves your machine. Workpool commands only ever talk to `hub`; your `origin` is only ever touched by you, in the main clone.
 
-## Glossary
+```mermaid
+flowchart LR
+    CloneA["clone A<br/>(busy)"] -- "hub store" --> Hub["hub<br/>(bare repo on disk)"]
+    CloneB["clone B<br/>(free)"] -- "hub store" --> Hub
+    Hub -- "hub fetch" --> Main["main clone<br/>(your files)"]
+```
 
-### Command glossary
+The pool is local and self-contained: workpool commands only ever talk to the
+local hub, and the CLI never commits — every commit is a plain `git commit`.
+Merging is always plain git — workpool has no merge command.
 
-Every command is named after the **destination of the data it moves**, so
-direction can't be misread:
+**Free vs busy** — free when clean and fully pushed to the hub. Ready to claim.
+Busy when it has uncommitted work or un-pushed commits.
+
+**The CLI never commits** — you always use `git commit`. History stays yours.
+
+**No merge command** — bringing workpool work into your main clone is plain
+`git merge`. The CLI only handles hub plumbing; merging stays with git.
+
+### Command direction — named after the destination
+
+Every workpool command is named after where it sends data, so direction can't be misread:
 
 | Command | Direction | Effect |
 |---------|-----------|--------|
@@ -97,7 +77,7 @@ direction can't be misread:
 Merging is deliberately **not** a workpool command — after `hub fetch`, use
 plain git (`git merge workpool/fix-x`).
 
-### Action / instruction glossary
+### Telling an agent what to do — always name the target
 
 When you tell an agent what to do, always name the **target** of the merge.
 The template that can't be misread:
@@ -117,16 +97,40 @@ The template that can't be misread:
 doubt between "merge main into the clone" and "merge the workpool branch into
 main", ask which one before running anything.
 
+## Commands
+
+| Command                       | Where          | What it does                                           |
+| ----------------------------- | -------------- | ------------------------------------------------------ |
+| `setup`                       | main clone     | add a clone to the pool (initializes hub on first run) |
+| `status`                      | anywhere       | pool state — clones, branches, free/busy               |
+| `claim [--clone NAME] [--force] BRANCH` | anywhere       | sync a free clone to a branch, print its path (`--clone` pins to a clone, `--force` overrides busy) |
+| `hub store [BRANCH]`          | either         | send committed work to the local hub — never commits, never touches your remote |
+| `hub fetch [BRANCH]`          | main clone     | make a hub branch available locally — no merge, no checkout |
+| `close [NAME]`                | anywhere       | reset a clone to clean, mark it free                   |
+
+Full reference: [docs/commands.md](docs/commands.md).
+
+## Glossary
+
+Just the resources — what things *are*.
+
+| Term | What it is |
+|------|------------|
+| **hub** | A bare git repo on your disk (`<pool>/<project>/hub.git`). It's just another git remote — `git remote add hub <path>` — but local, never pushed to `origin`. The only link between clones; stores every branch that matters. |
+| **main clone** | Your original checkout — the one that knows `origin`. The only place that ever talks to your real remote. |
+| **clone** | A full independent checkout with a codename (e.g. `jolly-otter`). Own files, own history, own `node_modules`. Created by `setup`, reused via `claim`/`close`. |
+| **pool** | The folder that holds `hub.git` + all clones. Root is `GIT_WORKPOOL_HOME` → `workpool.home` → `XDG_DATA_HOME/git-workpool` → `~/.local/share/git-workpool`. Project key is the repo folder name. |
+| **free / busy** | **Free** = clean and fully pushed to hub, ready to claim. **Busy** = dirty, untracked, never-pushed, or ahead of hub. |
+
 ## Install
 
-Prebuilt binaries via GitHub releases:
+Full options — the header one-liner is enough for most:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/avrebarra/git-workpool/main/install.sh | sh
 ```
 
-Set `GIT_WORKPOOL_INSTALL_DIR` to install somewhere else. The binary goes to
-`~/.local/bin` by default.
+Set `GIT_WORKPOOL_INSTALL_DIR` to install somewhere else. Binary goes to `~/.local/bin` by default.
 
 Alternatives:
 
