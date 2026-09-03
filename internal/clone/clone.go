@@ -63,22 +63,25 @@ func observe(name, path string) State {
 	return s
 }
 
-// PickTarget selects a clone to claim: --force NAME, else the first free one.
-func PickTarget(states []State, force string) (*State, error) {
-	if force != "" {
-		return pickByForce(states, force)
+// PickTarget selects a clone to claim: --clone NAME (with --force to override busy), else the first free one.
+func PickTarget(states []State, cloneName string, force bool) (*State, error) {
+	if cloneName != "" {
+		return pickByClone(states, cloneName, force)
 	}
 	return pickFirstFree(states)
 }
 
-// pickByForce returns the named clone, erroring if it doesn't exist.
-func pickByForce(states []State, force string) (*State, error) {
+// pickByClone returns the named clone, respecting Busy() unless force is set.
+func pickByClone(states []State, cloneName string, force bool) (*State, error) {
 	for i := range states {
-		if states[i].Name == force {
+		if states[i].Name == cloneName {
+			if states[i].Busy() && !force {
+				return nil, fmt.Errorf("clone %q is busy (on %q) — close it or retry with --force", cloneName, states[i].Branch)
+			}
 			return &states[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no clone named %q (available: %s)", force, Names(states))
+	return nil, fmt.Errorf("no clone named %q (available: %s)", cloneName, Names(states))
 }
 
 // pickFirstFree returns the first non-busy clone.

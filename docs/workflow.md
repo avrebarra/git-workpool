@@ -107,8 +107,8 @@ the workpool branch into main". Ask which one before running anything.
 | Remote | Never `fetch`/`pull`/`push origin` in the main clone — the real remote is only ever touched by the user, on `main`, after merge |
 | Store | After every commit (`git workpool hub store <branch>`) |
 | Close | Store first, then `git workpool close <name>` — close discards un-pushed work |
-| Force-claim | `claim --force NAME` requires explicit user permission AND an explicit clone name. Never auto-pick |
-| Never reset busy | A busy clone (dirty or un-pushed) is never touched except via `close` or `claim --force` |
+| Force-claim | `claim --clone NAME` pins to a clone (fails if busy); `claim --clone NAME --force` requires explicit user permission to override busy. Never auto-pick |
+| Never reset busy | A busy clone (dirty or un-pushed) is never touched except via `close` or `claim --clone NAME --force` |
 | Ask, don't guess | Direction unclear (e.g. "merge main") → ask which way before running anything |
 | Report | Clone codename + path + branch + commit hash (minimum) |
 

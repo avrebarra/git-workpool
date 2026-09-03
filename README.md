@@ -73,7 +73,7 @@ git workpool close jolly-otter           # reset clone, mark it free
 | ----------------------------- | -------------- | ------------------------------------------------------ |
 | `setup`                       | main clone     | add a clone to the pool (initializes hub on first run) |
 | `status`                      | anywhere       | pool state — clones, branches, free/busy               |
-| `claim [--force NAME] BRANCH` | anywhere       | sync a free clone to a branch, print its path          |
+| `claim [--clone NAME] [--force] BRANCH` | anywhere       | sync a free clone to a branch, print its path (`--clone` pins to a clone, `--force` overrides busy) |
 | `hub store [BRANCH]`          | either         | send committed work to the local hub — never commits, never touches your remote |
 | `hub fetch [BRANCH]`          | main clone     | make a hub branch available locally — no merge, no checkout |
 | `close [NAME]`                | anywhere       | reset a clone to clean, mark it free                   |

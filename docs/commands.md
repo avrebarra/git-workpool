@@ -40,23 +40,28 @@ Show the pool: hub branches and per-clone state.
 git workpool status
 ```
 
-## claim [--force NAME] [BRANCH]
+## claim [--clone NAME] [--force] [BRANCH]
 
 **Where:** anywhere.
 
 Sync a free clone to BRANCH and print its path.
 
 - Picks a free clone; without a free clone it errors and tells you to check
-  `status` or use `--force`.
+  `status` or pin a clone with `--clone`.
 - **BRANCH required** unless re-engaging a clone that already has work on a
   non-default branch in the hub (useful for resuming agent work).
-- `--force NAME`: rescue (push un-pushed commits to hub, stash dirty files),
-  reset, then claim that specific clone. Requires an explicit name — never
-  auto-picks.
+- `--clone NAME`: pin to a specific clone by name. Fails if that clone is
+  busy (dirty or ahead) — use `--force` to override.
+- `--force`: with `--clone`, rescue (push un-pushed commits to hub, stash dirty
+  files), reset, then claim that specific clone even if busy. Requires
+  `--clone` — never auto-picks what to sacrifice. Without `--clone`,
+  `--force` has no effect.
 
 ```bash
 git workpool claim workpool/fix-x
-git workpool claim --force flirty-beaver workpool/fix-x
+git workpool claim --clone flirty-beaver workpool/fix-x
+git workpool claim --clone flirty-beaver --force workpool/fix-x
+# legacy (deprecated): --force NAME → use --clone NAME --force
 ```
 
 ## hub store [BRANCH]
