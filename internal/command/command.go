@@ -72,7 +72,11 @@ func Status(poolRoot, project string) error {
 	}
 
 	// per-clone state
-	for _, s := range clone.States(poolRoot, project) {
+	states := clone.States(poolRoot, project)
+	if len(states) > 0 {
+		fmt.Printf("  %2s  %-20s %-5s %s\n", "#", "NAME", "STATUS", "BRANCH")
+	}
+	for i, s := range states {
 		mark := "free"
 		if s.Busy() {
 			mark = "busy"
@@ -87,7 +91,7 @@ func Status(poolRoot, project string) error {
 		if s.Branch != s.Default && !s.HasHub {
 			extra += " never-pushed"
 		}
-		fmt.Printf("  %-20s %-5s %s%s\n", s.Name, mark, s.Branch, extra)
+		fmt.Printf("  %2d  %-20s %-5s %s%s\n", i+1, s.Name, mark, s.Branch, extra)
 	}
 	return nil
 }
